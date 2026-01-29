@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/images/logo/icon.jpg" width="120" alt="Tritium Logo">
+</p>
+
 # Tritium
 
 [![License](https://img.shields.io/github/license/X-Ray-git/Tritium)](LICENSE)
