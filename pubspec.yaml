@@ -1,0 +1,105 @@
+name: tritium
+description: "知乎第三方客户端 - Zhihu third-party client"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # 状态管理
+  get: ^4.7.2
+
+  # 网络请求
+  dio: ^5.7.0
+  cookie_jar: ^4.0.8
+
+  # 图片加载
+  cached_network_image: ^3.4.1
+
+  # 本地存储
+  path_provider: ^2.1.5
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # 设备信息
+  device_info_plus: ^12.1.0
+
+  # 分享
+  share_plus: ^12.0.0
+
+  # WebView 用于登录
+  flutter_inappwebview: ^6.1.5
+
+  # 图标
+  font_awesome_flutter: ^10.9.0
+
+  # Toast/Dialog
+  flutter_smart_dialog: ^4.9.8+5
+
+  # HTML 渲染
+  flutter_html: ^3.0.0-beta.2
+  html: ^0.15.4
+
+  # 动态取色 (Material You)
+  dynamic_color: ^1.8.1
+  flex_seed_scheme: ^4.0.1
+
+  # 获取 app 信息
+  package_info_plus: ^9.0.0
+  url_launcher: ^6.3.1
+
+  # 防抖节流
+  easy_debounce: ^2.0.3
+
+  # 高帧率
+  flutter_displaymode: ^0.7.0
+
+  # 下拉刷新
+  pull_to_refresh_notification: ^3.1.0
+
+  # 瀑布流布局
+  waterfall_flow: ^3.1.0
+
+  # 图片查看
+  photo_view: ^0.15.0
+
+  # 加密
+  crypto: ^3.0.6
+
+  # 时间格式化
+  intl: ^0.20.2
+
+  # SVG 支持
+  flutter_svg: ^2.0.14
+  flutter_math_fork: ^0.7.4
+
+  # 保存到相册
+  gal: ^2.3.0
+  # 权限管理 (gal 可能需要)
+  permission_handler: ^11.3.1
+  animations: ^2.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  image_path: "icon.jpg"
+  adaptive_icon_background: "#0A66C2"
+  adaptive_icon_foreground: "icon.jpg"
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/images/logo/
