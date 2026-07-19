@@ -15,8 +15,10 @@ class GStorage {
   static late Box _cacheBox;
 
   /// 初始化存储
-  static Future<void> init() async {
-    if (!kIsWeb) {
+  static Future<void> init({String? pathOverride}) async {
+    if (pathOverride != null) {
+      Hive.init(pathOverride);
+    } else if (!kIsWeb) {
       final dir = await getApplicationSupportDirectory();
       final path = '${dir.path}/hive';
       // 确保目录存在
@@ -30,6 +32,10 @@ class GStorage {
     _settingBox = await Hive.openBox('settings');
     _userBox = await Hive.openBox('user');
     _cacheBox = await Hive.openBox('cache');
+
+    // 旧版的动态取色偏好已失效，启动时完成一次性清理。
+    await _settingBox.delete(StorageKeys.dynamicColor);
+    await _settingBox.delete(StorageKeys.customColor);
   }
 
   /// 设置 Box
@@ -65,29 +71,14 @@ class Pref {
   /// 主题模式
   static ThemeMode get themeMode {
     final value = GStorage.setting.get(StorageKeys.themeMode, defaultValue: 0);
-    return ThemeMode.values[value];
+    if (value is int && value >= 0 && value < ThemeMode.values.length) {
+      return ThemeMode.values[value];
+    }
+    return ThemeMode.system;
   }
 
   static set themeMode(ThemeMode mode) {
     GStorage.setting.put(StorageKeys.themeMode, mode.index);
-  }
-
-  /// 是否启用动态取色
-  static bool get dynamicColor {
-    return GStorage.setting.get(StorageKeys.dynamicColor, defaultValue: true);
-  }
-
-  static set dynamicColor(bool value) {
-    GStorage.setting.put(StorageKeys.dynamicColor, value);
-  }
-
-  /// 自定义主题颜色索引
-  static int get customColor {
-    return GStorage.setting.get(StorageKeys.customColor, defaultValue: 0);
-  }
-
-  static set customColor(int value) {
-    GStorage.setting.put(StorageKeys.customColor, value);
   }
 
   // ============ 用户设置 ============
@@ -136,7 +127,10 @@ class Pref {
 
   /// 默认回答排序: default (默认/热度), created (时间)
   static String get defaultAnswerSort {
-    return GStorage.setting.get(StorageKeys.defaultAnswerSort, defaultValue: 'default');
+    return GStorage.setting.get(
+      StorageKeys.defaultAnswerSort,
+      defaultValue: 'default',
+    );
   }
 
   static set defaultAnswerSort(String value) {
@@ -145,7 +139,10 @@ class Pref {
 
   /// 默认评论排序: score (热度), ts (时间)
   static String get defaultCommentSort {
-    return GStorage.setting.get(StorageKeys.defaultCommentSort, defaultValue: 'score');
+    return GStorage.setting.get(
+      StorageKeys.defaultCommentSort,
+      defaultValue: 'score',
+    );
   }
 
   static set defaultCommentSort(String value) {
@@ -154,7 +151,11 @@ class Pref {
 
   /// 默认启动页: 0 (推荐), 1 (热榜)
   static int get defaultHomeTab {
-    return GStorage.setting.get(StorageKeys.defaultHomeTab, defaultValue: 0);
+    final value = GStorage.setting.get(
+      StorageKeys.defaultHomeTab,
+      defaultValue: 0,
+    );
+    return value == 1 ? 1 : 0;
   }
 
   static set defaultHomeTab(int value) {
@@ -163,13 +164,14 @@ class Pref {
 
   // ============ 外观效果设置 ============
 
-
-
   // ============ 交互设置 ============
 
   /// 是否启用滑动振动反馈
   static bool get enableSwipeHaptics {
-    return GStorage.setting.get(StorageKeys.enableSwipeHaptics, defaultValue: false);
+    return GStorage.setting.get(
+      StorageKeys.enableSwipeHaptics,
+      defaultValue: false,
+    );
   }
 
   static set enableSwipeHaptics(bool value) {

@@ -24,13 +24,14 @@ class _PinPageState extends State<PinPage> {
   final _loadingState = Rx<LoadingState<Map<String, dynamic>>>(const Loading());
   Map<String, dynamic>? _pinData;
   String? _pinId;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     final arguments = Get.arguments as Map<String, dynamic>?;
     _pinId = widget.pinId ?? arguments?['pinId'];
-    
+
     // 同步检查缓存
     if (_pinId != null && PinHttp.cache.containsKey(_pinId)) {
       _pinData = PinHttp.cache[_pinId];
@@ -40,17 +41,25 @@ class _PinPageState extends State<PinPage> {
     }
   }
 
+  @override
+  void dispose() {
+    _loadGeneration++;
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     if (_pinId == null) {
       _loadingState.value = const Error('想法 ID 无效');
       return;
     }
 
+    final generation = ++_loadGeneration;
     if (_loadingState.value is! Success) {
-       _loadingState.value = const Loading();
+      _loadingState.value = const Loading();
     }
 
     final result = await PinHttp.getPin(_pinId!);
+    if (!mounted || generation != _loadGeneration) return;
 
     if (result is Success<Map<String, dynamic>>) {
       _pinData = result.response;
@@ -81,7 +90,7 @@ class _PinPageState extends State<PinPage> {
         }
 
         final data = _pinData!;
-        
+
         final contentRaw = data['content_html'] ?? data['content'] ?? '';
         final author = data['author'] as Map<String, dynamic>?;
         final voteupCount = data['voteup_count'] ?? 0;
@@ -93,101 +102,110 @@ class _PinPageState extends State<PinPage> {
         final authorHeadline = author?['headline'] ?? '';
         final authorAvatar = author?['avatar_url'] ?? '';
 
-        // 图片列表 handled by CustomHtml or separate grid? 
-        List<String> imageUrls = [];
-        if (data['content'] != null && data['content'] is List) {
-           for (var item in data['content']) {
-              if (item['type'] == 'image' || item['type'] == 'video') {
-                 if (item['url'] != null) imageUrls.add(item['url']);
-              }
-           }
-        }
-
         return ListView(
           padding: EdgeInsets.zero,
           children: [
-             // Author info
-             Padding(
-               padding: const EdgeInsets.all(16),
-               child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: colorScheme.primaryContainer,
-                      backgroundImage: authorAvatar.isNotEmpty
-                          ? CachedNetworkImageProvider(authorAvatar)
-                          : null,
-                      child: authorAvatar.isEmpty
-                          ? Icon(Icons.person, color: colorScheme.onPrimaryContainer)
-                          : null,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            authorName,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.onSurface,
-                            ),
+            // Author info
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: colorScheme.primaryContainer,
+                    backgroundImage: authorAvatar.isNotEmpty
+                        ? CachedNetworkImageProvider(authorAvatar)
+                        : null,
+                    child: authorAvatar.isEmpty
+                        ? Icon(
+                            Icons.person,
+                            color: colorScheme.onPrimaryContainer,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          authorName,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
                           ),
-                          if (authorHeadline.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              authorHeadline,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                        ),
+                        if (authorHeadline.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            authorHeadline,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
                             ),
-                          ],
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ],
-                      ),
+                      ],
                     ),
-                  ],
-               ),
-             ),
-             
-             // Content
-             if (contentRaw.isNotEmpty)
-               Padding(
-                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                 child: CustomHtml(
-                   content: contentRaw is String ? contentRaw : contentRaw.toString(),
-                   fontSize: 17,
-                 ),
-               ),
-             
-             const SizedBox(height: 16),
-             Padding(
-               padding: const EdgeInsets.symmetric(horizontal: 16),
-               child: Row(
-                 children: [
-                   Icon(Icons.thumb_up_outlined, size: 20, color: colorScheme.secondary),
-                   const SizedBox(width: 8),
-                   Text('$voteupCount 赞同', style: TextStyle(color: colorScheme.secondary)),
-                   const SizedBox(width: 24),
-                   Icon(Icons.chat_bubble_outline, size: 20, color: colorScheme.secondary),
-                   const SizedBox(width: 8),
-                   Text('$commentCount 评论', style: TextStyle(color: colorScheme.secondary)),
-                 ],
-               ),
-             ),
-             
-             // 评论区（嵌入在想法内容下方）
-             if (_pinId != null)
-               InlineCommentWidget(
-                 resourceId: _pinId!,
-                 resourceType: 'pins',
-                 showHeader: true,
-               ),
-               
-             const SizedBox(height: 100),
+                  ),
+                ],
+              ),
+            ),
+
+            // Content
+            if (contentRaw.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: CustomHtml(
+                  content: contentRaw is String
+                      ? contentRaw
+                      : contentRaw.toString(),
+                  fontSize: 17,
+                ),
+              ),
+
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.thumb_up_outlined,
+                    size: 20,
+                    color: colorScheme.secondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$voteupCount 赞同',
+                    style: TextStyle(color: colorScheme.secondary),
+                  ),
+                  const SizedBox(width: 24),
+                  Icon(
+                    Icons.chat_bubble_outline,
+                    size: 20,
+                    color: colorScheme.secondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$commentCount 评论',
+                    style: TextStyle(color: colorScheme.secondary),
+                  ),
+                ],
+              ),
+            ),
+
+            // 评论区（嵌入在想法内容下方）
+            if (_pinId != null)
+              InlineCommentWidget(
+                resourceId: _pinId!,
+                resourceType: 'pins',
+                showHeader: true,
+              ),
+
+            const SizedBox(height: 100),
           ],
         );
       }),

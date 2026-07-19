@@ -39,7 +39,7 @@ class AccountService extends GetxService {
   /// 设置登录 Cookie
   Future<bool> setLoginCookie(String cookies) async {
     Pref.cookies = cookies;
-    
+
     // 获取用户信息验证登录状态
     final success = await fetchUserInfo();
     if (success) {
@@ -56,7 +56,7 @@ class AccountService extends GetxService {
   Future<bool> fetchUserInfo() async {
     try {
       final response = await Request().get(ApiPaths.me);
-      
+
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
         if (data is Map<String, dynamic> && !data.containsKey('error')) {
@@ -82,7 +82,7 @@ class AccountService extends GetxService {
   /// 检查登录状态
   Future<bool> checkLoginStatus() async {
     if (!isLoggedIn) return false;
-    
+
     // 验证登录状态是否有效
     return await fetchUserInfo();
   }

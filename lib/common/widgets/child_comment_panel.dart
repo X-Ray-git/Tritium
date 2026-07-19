@@ -2,28 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../http/comment_http.dart';
 import '../../http/init.dart';
+import '../../models/common/paging_info.dart';
 import '../widgets/error_widget.dart' as custom;
+import 'app_chrome.dart';
 import 'unified_comment_item.dart';
 
 /// 子评论面板（BottomSheet 弹出）
-/// 
+///
 /// 对标 PiliPlus 的 VideoReplyReplyPanel 实现
 class ChildCommentPanel extends StatefulWidget {
   final String parentCommentId;
-  final String resourceType;
   final Map<String, dynamic>? parentComment; // 父评论数据，用于显示顶部
 
   const ChildCommentPanel({
     super.key,
     required this.parentCommentId,
-    required this.resourceType,
     this.parentComment,
   });
 
   /// 显示子评论面板
-  static void show(BuildContext context, {
+  static void show(
+    BuildContext context, {
     required String parentCommentId,
-    required String resourceType,
     Map<String, dynamic>? parentComment,
   }) {
     showModalBottomSheet(
@@ -36,7 +36,6 @@ class ChildCommentPanel extends StatefulWidget {
       ),
       builder: (context) => ChildCommentPanel(
         parentCommentId: parentCommentId,
-        resourceType: resourceType,
         parentComment: parentComment,
       ),
     );
@@ -51,6 +50,7 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
   final _comments = <Map<String, dynamic>>[].obs;
   String? _nextUrl;
   bool _isLoadingMore = false;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -58,22 +58,31 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _loadGeneration++;
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
+    final generation = ++_loadGeneration;
+    _isLoadingMore = false;
     _loadingState.value = const Loading();
-    
+
     final result = await CommentHttp.getRootComments(
       resourceId: widget.parentCommentId,
       resourceType: 'comment', // 子评论使用 comment 类型
       orderBy: 'ts', // 子评论按时间排序
     );
 
+    if (!mounted || generation != _loadGeneration) return;
+
     if (result is Success<Map<String, dynamic>>) {
       final data = result.response;
-      final items = (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
-      _nextUrl = data['paging']?['next'];
-      if (data['paging']?['is_end'] == true) {
-        _nextUrl = null;
-      }
+      final items =
+          (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ??
+          [];
+      _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
       _comments.value = items;
       _loadingState.value = Success(data);
     } else if (result is Error) {
@@ -83,6 +92,7 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
 
   Future<void> _loadMore() async {
     if (_isLoadingMore || _nextUrl == null) return;
+    final generation = _loadGeneration;
     _isLoadingMore = true;
 
     final result = await CommentHttp.getRootComments(
@@ -91,14 +101,17 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
       nextUrl: _nextUrl,
     );
 
+    if (!mounted || generation != _loadGeneration) return;
+
     if (result is Success<Map<String, dynamic>>) {
       final data = result.response;
-      final items = (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
-      _nextUrl = data['paging']?['next'];
-      if (data['paging']?['is_end'] == true) {
-        _nextUrl = null;
-      }
+      final items =
+          (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ??
+          [];
+      _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
       _comments.addAll(items);
+    } else if (result is Error) {
+      Get.snackbar('加载失败', (result as Error).errMsg);
     }
 
     _isLoadingMore = false;
@@ -108,11 +121,7 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+    return TritiumGlassSheet(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -129,7 +138,10 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
             ),
             child: Row(
               children: [
-                const Text('评论详情', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                const Text(
+                  '评论详情',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.close, size: 20),
@@ -139,7 +151,7 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
               ],
             ),
           ),
-          
+
           // 内容区域 (CustomScrollView)
           Expanded(
             child: Obx(() {
@@ -163,7 +175,8 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
               return NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
                   if (notification is ScrollEndNotification) {
-                    if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 100) {
+                    if (notification.metrics.pixels >=
+                        notification.metrics.maxScrollExtent - 100) {
                       _loadMore();
                     }
                   }
@@ -177,65 +190,72 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
                         child: Column(
                           children: [
                             UnifiedCommentItem(
-                              comment: widget.parentComment!, 
-                              resourceId: widget.parentCommentId, 
-                              resourceType: widget.resourceType,
+                              comment: widget.parentComment!,
+                              resourceId: widget.parentCommentId,
+                              resourceType: 'comment',
                               showChildComments: false, // 面板顶部不显示子评论预览
-                              onReplyTap: () {
-                                // 顶部父评论点击回复，通常是回复该评论
-                                // TODO: 实现回复框
-                              },
+                              enableRepliesNavigation: false,
                             ),
                             Divider(
-                              height: 1, 
-                              thickness: 8, 
-                              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)
+                              height: 1,
+                              thickness: 8,
+                              color: colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.3),
                             ),
                           ],
                         ),
                       ),
-                    
+
                     // 子评论列表
                     if (_comments.isEmpty)
                       const SliverToBoxAdapter(
-                         child: Padding(
-                           padding: EdgeInsets.all(32.0),
-                           child: Center(child: Text('暂无回复')),
-                         ),
+                        child: Padding(
+                          padding: EdgeInsets.all(32.0),
+                          child: Center(child: Text('暂无回复')),
+                        ),
                       )
                     else
                       SliverList(
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
-                            final int totalCount = _comments.length * 2 - 1 + ((_nextUrl != null) ? 1 : 0);
-                            
+                            final int totalCount =
+                                _comments.length * 2 -
+                                1 +
+                                ((_nextUrl != null) ? 1 : 0);
+
                             // 底部 Loading
                             if (_nextUrl != null && index == totalCount - 1) {
-                               return const Padding(
-                                    padding: EdgeInsets.all(16),
-                                    child: Center(
-                                      child: SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      ),
+                              return const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
                                     ),
-                                  );
+                                  ),
+                                ),
+                              );
                             }
-                            
+
                             // 分割线
                             if (index.isOdd) {
                               return Divider(
-                                height: 1, 
-                                thickness: 0.5, 
-                                indent: 56, 
-                                color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+                                height: 1,
+                                thickness: 0.5,
+                                indent: 56,
+                                color: colorScheme.outlineVariant.withValues(
+                                  alpha: 0.2,
+                                ),
                               );
                             }
 
                             // 实际数据索引
                             final itemIndex = index ~/ 2;
-                            if (itemIndex >= _comments.length) return const SizedBox.shrink();
+                            if (itemIndex >= _comments.length) {
+                              return const SizedBox.shrink();
+                            }
 
                             return UnifiedCommentItem(
                               comment: _comments[itemIndex],
@@ -243,12 +263,13 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
                               resourceType: 'comment',
                               showChildComments: false,
                               isChildComment: true,
-                              onReplyTap: () {
-                                // TODO: 回复该子评论
-                              },
+                              enableRepliesNavigation: false,
                             );
                           },
-                          childCount: _comments.length * 2 - 1 + ((_nextUrl != null) ? 1 : 0),
+                          childCount:
+                              _comments.length * 2 -
+                              1 +
+                              ((_nextUrl != null) ? 1 : 0),
                         ),
                       ),
                   ],

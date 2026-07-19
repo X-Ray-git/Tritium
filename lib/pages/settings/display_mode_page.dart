@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../utils/storage.dart';
 import '../../common/constants/constants.dart';
+import '../../common/widgets/app_chrome.dart';
 
 /// 屏幕帧率设置页面
 class DisplayModePage extends StatefulWidget {
@@ -19,32 +20,42 @@ class _DisplayModePageState extends State<DisplayModePage> {
   List<DisplayMode> modes = <DisplayMode>[];
   DisplayMode? active;
   DisplayMode? preferred;
+  int _loadGeneration = 0;
 
   Box setting = GStorage.setting;
 
   @override
   void initState() {
     super.initState();
-    init();
+    _initialize();
+  }
+
+  @override
+  void dispose() {
+    _loadGeneration++;
+    super.dispose();
   }
 
   /// 获取所有的 mode
-  Future<void> fetchAll() async {
-    preferred = await FlutterDisplayMode.preferred;
-    active = await FlutterDisplayMode.active;
-    setting.put(StorageKeys.displayMode, preferred.toString());
-    if (mounted) {
-      setState(() {});
-    }
+  Future<void> _fetchAll(int generation) async {
+    final nextPreferred = await FlutterDisplayMode.preferred;
+    final nextActive = await FlutterDisplayMode.active;
+    if (!mounted || generation != _loadGeneration) return;
+    preferred = nextPreferred;
+    active = nextActive;
+    await setting.put(StorageKeys.displayMode, preferred.toString());
+    if (mounted && generation == _loadGeneration) setState(() {});
   }
 
   /// 初始化 mode / 手动设置
-  Future<void> init() async {
+  Future<void> _initialize() async {
+    final generation = ++_loadGeneration;
     try {
       modes = await FlutterDisplayMode.supported;
     } on PlatformException catch (e) {
       if (kDebugMode) debugPrint(e.toString());
     }
+    if (!mounted || generation != _loadGeneration) return;
 
     final value = setting.get(StorageKeys.displayMode);
     if (value != null) {
@@ -56,9 +67,18 @@ class _DisplayModePageState extends State<DisplayModePage> {
 
     preferred ??= DisplayMode.auto;
 
-    FlutterDisplayMode.setPreferredMode(preferred!).whenComplete(() {
-      Future.delayed(const Duration(milliseconds: 100), fetchAll);
-    });
+    await _applyMode(preferred!, generation);
+  }
+
+  Future<void> _applyMode(DisplayMode mode, int generation) async {
+    try {
+      await FlutterDisplayMode.setPreferredMode(mode);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (!mounted || generation != _loadGeneration) return;
+      await _fetchAll(generation);
+    } on PlatformException catch (error) {
+      if (kDebugMode) debugPrint(error.toString());
+    }
   }
 
   @override
@@ -66,7 +86,7 @@ class _DisplayModePageState extends State<DisplayModePage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('屏幕帧率设置')),
+      appBar: const TritiumBlurAppBar(title: Text('屏幕帧率设置')),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -93,18 +113,25 @@ class _DisplayModePageState extends State<DisplayModePage> {
                 if (mode == DisplayMode.auto) {
                   title = '自动';
                 } else {
-                  title = '${mode.width}x${mode.height} @ ${mode.refreshRate.toStringAsFixed(0)}Hz';
+                  title =
+                      '${mode.width}x${mode.height} @ ${mode.refreshRate.toStringAsFixed(0)}Hz';
                 }
 
-                return RadioListTile<DisplayMode>(
-                  value: mode,
-                  groupValue: preferred,
+                return ListTile(
+                  leading: Icon(
+                    mode == DisplayMode.auto
+                        ? Icons.auto_awesome_rounded
+                        : Icons.monitor_rounded,
+                  ),
                   title: Row(
                     children: [
                       Expanded(child: Text(title)),
                       if (isActive)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: colorScheme.primaryContainer,
                             borderRadius: BorderRadius.circular(4),
@@ -120,16 +147,10 @@ class _DisplayModePageState extends State<DisplayModePage> {
                     ],
                   ),
                   selected: isSelected,
-                  onChanged: (DisplayMode? newMode) {
-                    if (newMode != null) {
-                      FlutterDisplayMode.setPreferredMode(newMode).whenComplete(
-                        () => Future.delayed(
-                          const Duration(milliseconds: 100),
-                          fetchAll,
-                        ),
-                      );
-                    }
-                  },
+                  trailing: isSelected
+                      ? Icon(Icons.check_rounded, color: colorScheme.primary)
+                      : null,
+                  onTap: () => _applyMode(mode, _loadGeneration),
                 );
               },
             ),

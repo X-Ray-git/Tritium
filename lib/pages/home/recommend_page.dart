@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:get/get.dart';
 
 import '../../http/feed_http.dart';
 import '../../http/init.dart';
+import '../../models/common/paging_info.dart';
 import '../../common/widgets/loading_widget.dart';
 import '../../common/widgets/error_widget.dart' as custom;
 import '../../common/widgets/empty_widget.dart';
@@ -12,11 +14,18 @@ import '../../services/preload_service.dart';
 
 /// 推荐页控制器
 class RecommendController extends GetxController {
-  final loadingState = Rx<LoadingState<List<Map<String, dynamic>>>>(const Loading());
+  final loadingState = Rx<LoadingState<List<Map<String, dynamic>>>>(
+    const Loading(),
+  );
   final feedList = <Map<String, dynamic>>[].obs;
-  
+  final isRefreshing = false.obs;
+  final isLoadingMore = false.obs;
+  final loadMoreError = RxnString();
+
   String? _nextUrl;
-  bool _isLoadingMore = false;
+  int _loadGeneration = 0;
+
+  bool get hasMore => _nextUrl != null;
 
   @override
   void onInit() {
@@ -24,57 +33,87 @@ class RecommendController extends GetxController {
     loadData();
   }
 
+  @override
+  void onClose() {
+    _loadGeneration++;
+    super.onClose();
+  }
+
   /// 加载数据
-  Future<void> loadData() async {
+  Future<void> loadData({bool forceNetwork = false}) async {
+    final generation = ++_loadGeneration;
     _nextUrl = null;
-    
+    loadMoreError.value = null;
+
     // 优先使用预加载缓存
-    final cachedData = PreloadService.instance.consumeRecommendCache();
-    if (cachedData != null && cachedData.isNotEmpty) {
-      debugPrint('RecommendController: Using preloaded cache with ${cachedData.length} items');
-      feedList.value = cachedData;
-      loadingState.value = Success(cachedData);
+    final cachedPage = forceNetwork
+        ? null
+        : PreloadService.instance.consumeRecommendCache();
+    if (cachedPage != null && cachedPage.items.isNotEmpty) {
+      feedList.value = cachedPage.items;
+      _nextUrl = cachedPage.isEnd ? null : cachedPage.nextUrl;
+      loadingState.value = Success(cachedPage.items);
       return;
     }
-    
-    // 没有缓存，正常加载
-    loadingState.value = const Loading();
-    
+
+    if (feedList.isEmpty) {
+      loadingState.value = const Loading();
+    } else {
+      isRefreshing.value = true;
+    }
+
     final result = await FeedHttp.getRecommend();
-    
+    if (generation != _loadGeneration) return;
+
     if (result is Success<Map<String, dynamic>>) {
       final data = result.response;
       final items = _parseItems(data['data'] ?? []);
-      _nextUrl = data['paging']?['next'];
-      
+      _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
+
       feedList.value = items;
       loadingState.value = Success(items);
     } else if (result is Error) {
-      loadingState.value = Error((result as Error).errMsg);
+      if (feedList.isEmpty) {
+        loadingState.value = Error((result as Error).errMsg);
+      } else {
+        Get.snackbar('刷新失败', (result as Error).errMsg);
+      }
     }
+    isRefreshing.value = false;
   }
 
   /// 加载更多
   Future<void> loadMore() async {
-    if (_isLoadingMore || _nextUrl == null) return;
-    _isLoadingMore = true;
+    final nextUrl = _nextUrl;
+    if (isLoadingMore.value || nextUrl == null) return;
+    final generation = _loadGeneration;
+    isLoadingMore.value = true;
+    loadMoreError.value = null;
 
-    final result = await FeedHttp.getRecommend(nextUrl: _nextUrl);
-    
+    final result = await FeedHttp.getRecommend(nextUrl: nextUrl);
+    if (generation != _loadGeneration) {
+      isLoadingMore.value = false;
+      return;
+    }
+
     if (result is Success<Map<String, dynamic>>) {
       final data = result.response;
       final items = _parseItems(data['data'] ?? []);
-      _nextUrl = data['paging']?['next'];
-      
+      _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
+
       feedList.addAll(items);
+    } else if (result is Error) {
+      loadMoreError.value = (result as Error).errMsg;
     }
-    
-    _isLoadingMore = false;
+
+    isLoadingMore.value = false;
   }
 
   /// 解析 Feed 项
-  List<Map<String, dynamic>> _parseItems(List<dynamic> data) {
-    return data.whereType<Map<String, dynamic>>().toList();
+  List<Map<String, dynamic>> _parseItems(dynamic data) {
+    return data is List
+        ? data.whereType<Map<String, dynamic>>().toList()
+        : const [];
   }
 }
 
@@ -94,7 +133,8 @@ class _RecommendPageState extends State<RecommendPage> {
   void initState() {
     super.initState();
     controller = Get.put(RecommendController());
-    
+    _scrollController.addListener(_onScroll);
+
     // 注册滚动到顶部回调
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final mainController = Get.find<MainController>();
@@ -104,6 +144,7 @@ class _RecommendPageState extends State<RecommendPage> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     // 清理回调
     final mainController = Get.find<MainController>();
@@ -111,6 +152,13 @@ class _RecommendPageState extends State<RecommendPage> {
       mainController.scrollToTopCallback = null;
     }
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.extentAfter < 480) {
+      controller.loadMore();
+    }
   }
 
   void _scrollToTop() {
@@ -148,21 +196,31 @@ class _RecommendPageState extends State<RecommendPage> {
       }
 
       return RefreshIndicator(
-        onRefresh: controller.loadData,
+        onRefresh: () => controller.loadData(forceNetwork: true),
         child: ListView.builder(
           controller: _scrollController,
           padding: EdgeInsets.only(
             top: 8,
-            bottom: 8 + kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom,
+            bottom: 88 + MediaQuery.paddingOf(context).bottom,
           ),
           addAutomaticKeepAlives: false,
           addRepaintBoundaries: false, // 已经在子组件 FeedCard 中处理
-          cacheExtent: 500, // 增加预渲染范围
-          itemCount: controller.feedList.length + 1,
+          scrollCacheExtent: const ScrollCacheExtent.pixels(500),
+          itemCount: controller.feedList.length + (controller.hasMore ? 1 : 0),
           itemBuilder: (context, index) {
             if (index == controller.feedList.length) {
-              // 加载更多
-              controller.loadMore();
+              if (controller.loadMoreError.value != null) {
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Center(
+                    child: TextButton.icon(
+                      onPressed: controller.loadMore,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('加载失败，点击重试'),
+                    ),
+                  ),
+                );
+              }
               return const Padding(
                 padding: EdgeInsets.all(16),
                 child: Center(

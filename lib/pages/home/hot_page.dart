@@ -11,8 +11,12 @@ import '../../services/preload_service.dart';
 
 /// 热榜页控制器
 class HotController extends GetxController {
-  final loadingState = Rx<LoadingState<List<Map<String, dynamic>>>>(const Loading());
+  final loadingState = Rx<LoadingState<List<Map<String, dynamic>>>>(
+    const Loading(),
+  );
   final hotList = <Map<String, dynamic>>[].obs;
+  final isRefreshing = false.obs;
+  int _loadGeneration = 0;
 
   @override
   void onInit() {
@@ -20,33 +24,53 @@ class HotController extends GetxController {
     loadData();
   }
 
+  @override
+  void onClose() {
+    _loadGeneration++;
+    super.onClose();
+  }
+
   /// 加载数据
   Future<void> loadData() async {
-    loadingState.value = const Loading();
-    
+    final generation = ++_loadGeneration;
+    if (hotList.isEmpty) {
+      loadingState.value = const Loading();
+    } else {
+      isRefreshing.value = true;
+    }
+
     final result = await FeedHttp.getHotList();
-    
+    if (generation != _loadGeneration) return;
+
     if (result is Success<Map<String, dynamic>>) {
       final data = result.response;
-      final items = (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
-      
+      final items =
+          (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ??
+          [];
+
       hotList.value = items;
       loadingState.value = Success(items);
-      
+
       // 触发预加载：预加载热榜前 5 条的详情，并在后台预加载推荐页
-      _triggerPreload(items);
+      _triggerPreload(items, generation);
     } else if (result is Error) {
-      loadingState.value = Error((result as Error).errMsg);
+      if (hotList.isEmpty) {
+        loadingState.value = Error((result as Error).errMsg);
+      } else {
+        Get.snackbar('刷新失败', (result as Error).errMsg);
+      }
     }
+    isRefreshing.value = false;
   }
-  
+
   /// 触发预加载
-  void _triggerPreload(List<Map<String, dynamic>> items) {
+  void _triggerPreload(List<Map<String, dynamic>> items, int generation) {
     // 延迟一点再预加载，让主要 UI 先渲染
     Future.delayed(const Duration(milliseconds: 500), () {
+      if (generation != _loadGeneration) return;
       // 预加载热榜详情
       PreloadService.instance.preloadHotListDetails(items, count: 5);
-      
+
       // 预加载推荐页数据
       PreloadService.instance.preloadRecommendList();
     });
@@ -89,8 +113,8 @@ class HotPage extends StatelessWidget {
           // 增加底部 Padding 以防止被毛玻璃底栏遮挡
           // kBottomNavigationBarHeight (56) + 额外间距
           padding: EdgeInsets.only(
-            top: 8, 
-            bottom: 8 + kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom,
+            top: 8,
+            bottom: 88 + MediaQuery.paddingOf(context).bottom,
           ),
           itemCount: controller.hotList.length,
           itemBuilder: (context, index) {

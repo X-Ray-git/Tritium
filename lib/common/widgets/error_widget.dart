@@ -5,16 +5,12 @@ class ErrorWidget extends StatelessWidget {
   final String? message;
   final VoidCallback? onRetry;
 
-  const ErrorWidget({
-    super.key,
-    this.message,
-    this.onRetry,
-  });
+  const ErrorWidget({super.key, this.message, this.onRetry});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),

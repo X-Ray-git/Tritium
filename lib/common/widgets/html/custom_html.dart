@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../../services/content_link_service.dart';
 import '../image_viewer.dart';
 
 /// 统一的 HTML 渲染组件
@@ -93,10 +94,10 @@ class CustomHtml extends StatelessWidget {
     // 遍历 map 进行替换 (性能考虑：由于 emoji 数量不多，且文本通常不长，直接遍历替换可以接受)
     _emojiMap.forEach((key, url) {
       if (processed.contains('[$key]')) {
-         processed = processed.replaceAll(
-           '[$key]', 
-           '<img src="$url" alt="[$key]" class="emoji" style="display:inline; width:20px; height:20px; vertical-align:middle; margin: 0 2px;" data-is-emoji="true" />'
-         );
+        processed = processed.replaceAll(
+          '[$key]',
+          '<img src="$url" alt="[$key]" class="emoji" style="display:inline; width:20px; height:20px; vertical-align:middle; margin: 0 2px;" data-is-emoji="true" />',
+        );
       }
     });
 
@@ -118,19 +119,21 @@ class CustomHtml extends StatelessWidget {
             tagsToExtend: {"tex-math"},
             builder: (ctx) {
               // Priority: 1. data-tex attribute 2. element text
-              String tex = ctx.attributes['data-tex'] ?? ctx.element?.text ?? '';
-              
+              String tex =
+                  ctx.attributes['data-tex'] ?? ctx.element?.text ?? '';
+
               // Decode HTML entities (unescape)
-              tex = tex.replaceAll('&amp;', '&')
-                       .replaceAll('&lt;', '<')
-                       .replaceAll('&gt;', '>')
-                       .replaceAll(r'\\', r'\')
-                       .replaceAll(RegExp(r'\\tag\{.*?\}'), '')
-                       .replaceAll(RegExp(r'\\label\{.*?\}'), '')
-                       .replaceAll(RegExp(r'\\mbox\{.*?\}'), '')
-                       .replaceAll(r'\rm ', '')
-                       .trim();
-              
+              tex = tex
+                  .replaceAll('&amp;', '&')
+                  .replaceAll('&lt;', '<')
+                  .replaceAll('&gt;', '>')
+                  .replaceAll(r'\\', r'\')
+                  .replaceAll(RegExp(r'\\tag\{.*?\}'), '')
+                  .replaceAll(RegExp(r'\\label\{.*?\}'), '')
+                  .replaceAll(RegExp(r'\\mbox\{.*?\}'), '')
+                  .replaceAll(r'\rm ', '')
+                  .trim();
+
               final currentFontSize = ctx.style?.fontSize?.value ?? fontSize;
               final currentColor = ctx.style?.color ?? cs.onSurface;
 
@@ -142,8 +145,8 @@ class CustomHtml extends StatelessWidget {
                 ),
                 mathStyle: MathStyle.text,
                 onErrorFallback: (err) {
-                   // Fallback to text if parsing fails
-                   return Text(tex, style: TextStyle(color: cs.error));
+                  // Fallback to text if parsing fails
+                  return Text(tex, style: TextStyle(color: cs.error));
                 },
               );
             },
@@ -152,43 +155,50 @@ class CustomHtml extends StatelessWidget {
             tagsToExtend: {"img"},
             builder: (ctx) {
               final attributes = ctx.attributes;
-              var url = attributes['data-actualsrc'] ?? attributes['data-original'] ?? attributes['src'];
-              
+              var url =
+                  attributes['data-actualsrc'] ??
+                  attributes['data-original'] ??
+                  attributes['src'];
+
               // Identify formula images (Zhihu specific)
-              final isEquation = attributes['class']?.contains('ee_img') == true || 
-                               (url != null && url.contains('zhihu.com/equation'));
-              final isEmoji = attributes['data-is-emoji'] == 'true' || attributes['class']?.contains('emoji') == true;
+              final isEquation =
+                  attributes['class']?.contains('ee_img') == true ||
+                  (url != null && url.contains('zhihu.com/equation'));
+              final isEmoji =
+                  attributes['data-is-emoji'] == 'true' ||
+                  attributes['class']?.contains('emoji') == true;
               final altTex = attributes['alt'];
-              
+
               if (isEquation && altTex != null && altTex.isNotEmpty) {
-                 // ... equation logic (skipped for brevity)
-                 // Keeping existing equation logic here if I were editing the whole block, 
-                 // but since I'm targeting a chunk, I'll copy the equation logic back in or ensure it's not lost.
-                 // Actually, replace_file_content replaces the whole chunk.
-                 // So I need to include the FULL content of the chunk including my previous equation fix.
-                 
-                 // Render as Math instead of Image
-                 String tex = altTex.replaceAll('&amp;', '&')
-                                    .replaceAll('&lt;', '<')
-                                    .replaceAll('&gt;', '>')
-                                    .replaceAll(r'\\', r'\');
-                                    
-                 final currentFontSize = ctx.style?.fontSize?.value ?? fontSize;
-                 final currentColor = ctx.style?.color ?? cs.onSurface;
-                 
-                 return Math.tex(
-                    tex,
-                    textStyle: TextStyle(
-                      fontSize: currentFontSize,
-                      color: currentColor,
-                    ),
-                    mathStyle: MathStyle.text,
-                    onErrorFallback: (err) => Text(tex),
-                 );
+                // ... equation logic (skipped for brevity)
+                // Keeping existing equation logic here if I were editing the whole block,
+                // but since I'm targeting a chunk, I'll copy the equation logic back in or ensure it's not lost.
+                // Actually, replace_file_content replaces the whole chunk.
+                // So I need to include the FULL content of the chunk including my previous equation fix.
+
+                // Render as Math instead of Image
+                String tex = altTex
+                    .replaceAll('&amp;', '&')
+                    .replaceAll('&lt;', '<')
+                    .replaceAll('&gt;', '>')
+                    .replaceAll(r'\\', r'\');
+
+                final currentFontSize = ctx.style?.fontSize?.value ?? fontSize;
+                final currentColor = ctx.style?.color ?? cs.onSurface;
+
+                return Math.tex(
+                  tex,
+                  textStyle: TextStyle(
+                    fontSize: currentFontSize,
+                    color: currentColor,
+                  ),
+                  mathStyle: MathStyle.text,
+                  onErrorFallback: (err) => Text(tex),
+                );
               }
 
               if (url == null || url.isEmpty) return const SizedBox();
-              
+
               // Handle Emoji specifically
               if (isEmoji) {
                 return CachedNetworkImage(
@@ -196,15 +206,16 @@ class CustomHtml extends StatelessWidget {
                   width: 20,
                   height: 20,
                   httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
-                  placeholder: (context, url) => const SizedBox(width: 20, height: 20),
+                  placeholder: (context, url) =>
+                      const SizedBox(width: 20, height: 20),
                   errorWidget: (context, url, error) => Text(altTex ?? ''),
                 );
               }
-              
+
               if (url.startsWith('//')) {
                 url = 'https:$url';
               } else if (!url.startsWith('http')) {
-                return const SizedBox(); 
+                return const SizedBox();
               }
 
               return GestureDetector(
@@ -217,7 +228,8 @@ class CustomHtml extends StatelessWidget {
                   fadeInDuration: const Duration(milliseconds: 200), // 平滑淡入
                   fadeOutDuration: const Duration(milliseconds: 100),
                   placeholder: (context, url) => Container(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.3),
                     constraints: const BoxConstraints(minHeight: 200),
                   ), // 无加载圈，仅背景色
                   errorWidget: (context, url, error) => const Icon(Icons.error),
@@ -233,16 +245,24 @@ class CustomHtml extends StatelessWidget {
               final attributes = ctx.attributes;
               final text = ctx.element?.text ?? '';
               final href = attributes['href'];
-              
+
               // If link text contains "View Image" or "GIF" and href is image
-              if ((text.contains('查看图片') || text.contains('图片') || text.contains('动图')) && href != null) {
-                 // Check if it's an image URL (basic check)
-                 // Also trust zhimg.com URLs
-                 final isImage = href.endsWith('.jpg') || href.endsWith('.png') || href.endsWith('.gif') || 
-                               href.endsWith('.jpeg') || href.endsWith('.webp') || href.contains('zhimg.com');
-                 
-                 if (isImage) {
-                   return GestureDetector(
+              if ((text.contains('查看图片') ||
+                      text.contains('图片') ||
+                      text.contains('动图')) &&
+                  href != null) {
+                // Check if it's an image URL (basic check)
+                // Also trust zhimg.com URLs
+                final isImage =
+                    href.endsWith('.jpg') ||
+                    href.endsWith('.png') ||
+                    href.endsWith('.gif') ||
+                    href.endsWith('.jpeg') ||
+                    href.endsWith('.webp') ||
+                    href.contains('zhimg.com');
+
+                if (isImage) {
+                  return GestureDetector(
                     onTap: () => ImageViewer.show(context, href),
                     child: Container(
                       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -251,27 +271,30 @@ class CustomHtml extends StatelessWidget {
                         width: 120, // Thumbnail size for comment replies
                         height: 120,
                         fit: BoxFit.cover,
-                        httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
+                        httpHeaders: const {
+                          'Referer': 'https://www.zhihu.com/',
+                        },
                         fadeInDuration: const Duration(milliseconds: 200),
                         fadeOutDuration: const Duration(milliseconds: 100),
                         placeholder: (context, url) => Container(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.3),
                         ),
-                        errorWidget: (context, url, error) => const Icon(Icons.broken_image),
+                        errorWidget: (context, url, error) =>
+                            const Icon(Icons.broken_image),
                       ),
                     ),
-                   );
-                 }
+                  );
+                }
               }
-              
+
               // Fallback: Render as a normal link
               return GestureDetector(
-                onTap: () {
-                   if (href != null) {
-                     // TODO: 启动 URL
-                     debugPrint('Launch URL: $href');
-                   }
-                },
+                onTap: href == null
+                    ? null
+                    : () => ContentLinkService.open(href),
                 child: Text(
                   text,
                   style: TextStyle(
@@ -291,14 +314,9 @@ class CustomHtml extends StatelessWidget {
             padding: HtmlPaddings.zero,
             color: cs.onSurface,
           ),
-          'p': Style(
-            margin: Margins.only(bottom: 16),
-          ),
+          'p': Style(margin: Margins.only(bottom: 16)),
           'noscript': Style(display: Display.none),
-          'a': Style(
-            color: cs.primary,
-            textDecoration: TextDecoration.none,
-          ),
+          'a': Style(color: cs.primary, textDecoration: TextDecoration.none),
           'blockquote': Style(
             padding: HtmlPaddings.only(left: 12),
             border: Border(left: BorderSide(color: cs.primary, width: 3)),
@@ -317,15 +335,13 @@ class CustomHtml extends StatelessWidget {
             whiteSpace: WhiteSpace.pre, // Use simple pre
           ),
           // 针对公式 span 的自定义样式（如果不仅仅是 class check）
-           'tex-math': Style(
-             fontSize: FontSize(fontSize),
-           ),
-           'hr': Style(
-             margin: Margins.symmetric(vertical: 24),
-             height: Height(0.5),
-             backgroundColor: Colors.grey.withValues(alpha: 0.3),
-             border: Border.all(style: BorderStyle.none),
-           ),
+          'tex-math': Style(fontSize: FontSize(fontSize)),
+          'hr': Style(
+            margin: Margins.symmetric(vertical: 24),
+            height: Height(0.5),
+            backgroundColor: Colors.grey.withValues(alpha: 0.3),
+            border: Border.all(style: BorderStyle.none),
+          ),
         },
       ),
     );

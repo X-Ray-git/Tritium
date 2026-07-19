@@ -10,20 +10,13 @@ class ImageViewer extends StatelessWidget {
   final String imageUrl;
   final String? heroTag;
 
-  const ImageViewer({
-    super.key,
-    required this.imageUrl,
-    this.heroTag,
-  });
+  const ImageViewer({super.key, required this.imageUrl, this.heroTag});
 
   static void show(BuildContext context, String imageUrl, {String? heroTag}) {
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (context) => ImageViewer(
-          imageUrl: imageUrl,
-          heroTag: heroTag,
-        ),
+        builder: (context) => ImageViewer(imageUrl: imageUrl, heroTag: heroTag),
       ),
     );
   }
@@ -55,11 +48,8 @@ class ImageViewer extends StatelessWidget {
               placeholder: (context, url) => const Center(
                 child: CircularProgressIndicator(color: Colors.white),
               ),
-              errorWidget: (context, url, error) => const Icon(
-                Icons.error,
-                color: Colors.white,
-                size: 48,
-              ),
+              errorWidget: (context, url, error) =>
+                  const Icon(Icons.error, color: Colors.white, size: 48),
             ),
           ),
         ),
@@ -79,7 +69,7 @@ class ImageViewer extends StatelessWidget {
               title: const Text('保存图片'),
               onTap: () {
                 Navigator.pop(context);
-                _saveImage(context);
+                _saveImage();
               },
             ),
           ],
@@ -88,38 +78,40 @@ class ImageViewer extends StatelessWidget {
     );
   }
 
-  Future<void> _saveImage(BuildContext context) async {
+  Future<void> _saveImage() async {
     try {
       // 检查权限 (特别是 Android < 10)
       // Gal 内部通常会处理，但最好先请求
       // bool hasAccess = await Gal.hasAccess();
       // if (!hasAccess) {
       //   await Gal.requestAccess();
-      //   return; // Gal requestAccess usually handles flow? 
+      //   return; // Gal requestAccess usually handles flow?
       // }
       // Gal 插件可以直接调用，自动处理
-      
-      Get.showSnackbar(const GetSnackBar(
-        message: '正在保存...',
-        duration: Duration(seconds: 1),
-        snackPosition: SnackPosition.BOTTOM,
-      ));
+
+      Get.showSnackbar(
+        const GetSnackBar(
+          message: '正在保存...',
+          duration: Duration(seconds: 1),
+          snackPosition: SnackPosition.BOTTOM,
+        ),
+      );
 
       // 下载图片字节
       final response = await Dio().get(
         imageUrl,
         options: Options(
-          responseType: ResponseType.bytes, 
+          responseType: ResponseType.bytes,
           headers: {'Referer': 'https://www.zhihu.com/'}, // 添加 Referer 防盗链
         ),
       );
-      
+
       // 保存到相册
       await Gal.putImageBytes(
         Uint8List.fromList(response.data),
         name: 'zhihu_${DateTime.now().millisecondsSinceEpoch}',
       );
-      
+
       Get.snackbar(
         '保存成功',
         '图片已保存到系统相册',
@@ -131,13 +123,13 @@ class ImageViewer extends StatelessWidget {
     } catch (e) {
       debugPrint('Save Image Error: $e');
       if (e is GalException) {
-         String msg = '保存失败';
-         if (e.type == GalExceptionType.accessDenied) {
-           msg = '请授予存储权限';
-         } else {
-           msg = '保存异常: ${e.type}';
-         }
-         Get.snackbar(
+        String msg = '保存失败';
+        if (e.type == GalExceptionType.accessDenied) {
+          msg = '请授予存储权限';
+        } else {
+          msg = '保存异常: ${e.type}';
+        }
+        Get.snackbar(
           '保存失败',
           msg,
           snackPosition: SnackPosition.BOTTOM,

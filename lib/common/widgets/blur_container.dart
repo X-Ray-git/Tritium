@@ -93,9 +93,8 @@ class BlurAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   @override
-  Size get preferredSize => Size.fromHeight(
-        kToolbarHeight + (bottom?.preferredSize.height ?? 0),
-      );
+  Size get preferredSize =>
+      Size.fromHeight(kToolbarHeight + (bottom?.preferredSize.height ?? 0));
 }
 
 /// 通用 BottomNavigationBar 容器
@@ -105,23 +104,16 @@ class BlurBottomBar extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
 
-  const BlurBottomBar({
-    super.key,
-    required this.child,
-    this.padding,
-  });
+  const BlurBottomBar({super.key, required this.child, this.padding});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
-    final effectivePadding = padding ?? EdgeInsets.only(
-      left: 16,
-      right: 16,
-      top: 8,
-      bottom: 8 + bottomPadding,
-    );
+    final effectivePadding =
+        padding ??
+        EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 8 + bottomPadding);
 
     return Container(
       padding: effectivePadding,

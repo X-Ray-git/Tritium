@@ -13,21 +13,19 @@ class HotCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: _buildContent(context),
-    );
+    return RepaintBoundary(child: _buildContent(context));
   }
 
   Widget _buildContent(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     final target = data['target'] as Map<String, dynamic>?;
     final detailText = data['detail_text'] ?? '';
-    
+
     if (target == null) {
       return const SizedBox.shrink();
     }
-    
+
     // 提取 questionId 用于预加载
     String? questionId = target['id']?.toString();
     if (questionId == null && target['link'] != null) {
@@ -46,7 +44,7 @@ class HotCard extends StatelessWidget {
         }
       }
     }
-    
+
     // 预加载问题详情
     if (questionId != null) {
       QuestionHttp.preload(questionId);
@@ -66,7 +64,7 @@ class HotCard extends StatelessWidget {
     // 获取统计信息
     dynamic answerCount = target['answer_count'];
     dynamic followerCount = target['follower_count'];
-    
+
     // 尝试从 metrics_area 获取
     if (answerCount == null && target['metrics_area'] != null) {
       final metrics = target['metrics_area'] as Map<String, dynamic>;
@@ -77,7 +75,7 @@ class HotCard extends StatelessWidget {
         // 如果这里获取不到数字，可以保持为 null
       }
     }
-    
+
     // 尝试从 feed_specific 获取回答数
     if (data['feed_specific'] != null) {
       answerCount ??= data['feed_specific']['answer_count'];
@@ -137,7 +135,7 @@ class HotCard extends StatelessWidget {
                     Text(
                       title,
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: colorScheme.onSurface,
                         height: 1.4,
@@ -153,7 +151,7 @@ class HotCard extends StatelessWidget {
                         child: Text(
                           excerpt,
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: 12,
                             color: colorScheme.onSurface.withValues(alpha: 0.7),
                             height: 1.4,
                           ),
@@ -166,9 +164,14 @@ class HotCard extends StatelessWidget {
                       children: [
                         if (detailText.isNotEmpty)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
-                              color: colorScheme.errorContainer.withValues(alpha: 0.5),
+                              color: colorScheme.errorContainer.withValues(
+                                alpha: 0.5,
+                              ),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(

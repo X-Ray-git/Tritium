@@ -23,7 +23,8 @@ class Request {
       receiveTimeout: const Duration(milliseconds: Constants.defaultTimeout),
       sendTimeout: const Duration(milliseconds: Constants.defaultTimeout),
       headers: {
-        'user-agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'user-agent':
+            'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
         'accept': 'application/json',
         'accept-language': 'zh-CN,zh;q=0.9',
       },
@@ -35,12 +36,7 @@ class Request {
     if (!kIsWeb) {
       dio.httpClientAdapter = IOHttpClientAdapter(
         createHttpClient: () {
-          final client = HttpClient()
-            ..idleTimeout = const Duration(seconds: 15);
-          if (kDebugMode) {
-            client.badCertificateCallback = (cert, host, port) => true;
-          }
-          return client;
+          return HttpClient()..idleTimeout = const Duration(seconds: 15);
         },
       );
     }
@@ -53,19 +49,14 @@ class Request {
       dio.interceptors.add(
         LogInterceptor(
           request: true,
-          requestHeader: true,
-          requestBody: true,
+          requestHeader: false,
+          requestBody: false,
           responseHeader: false,
-          responseBody: true,
+          responseBody: false,
           error: true,
         ),
       );
     }
-  }
-
-  /// 设置 Cookie
-  static void setCookie() {
-    // Cookie 会通过拦截器自动添加
   }
 
   /// GET 请求
@@ -78,69 +69,6 @@ class Request {
     try {
       return await dio.get(
         url,
-        queryParameters: queryParameters,
-        options: options,
-        cancelToken: cancelToken,
-      );
-    } on DioException catch (e) {
-      return _handleError(e);
-    }
-  }
-
-  /// POST 请求
-  Future<Response> post(
-    String url, {
-    Object? data,
-    Map<String, dynamic>? queryParameters,
-    Options? options,
-    CancelToken? cancelToken,
-  }) async {
-    try {
-      return await dio.post(
-        url,
-        data: data,
-        queryParameters: queryParameters,
-        options: options,
-        cancelToken: cancelToken,
-      );
-    } on DioException catch (e) {
-      return _handleError(e);
-    }
-  }
-
-  /// DELETE 请求
-  Future<Response> delete(
-    String url, {
-    Object? data,
-    Map<String, dynamic>? queryParameters,
-    Options? options,
-    CancelToken? cancelToken,
-  }) async {
-    try {
-      return await dio.delete(
-        url,
-        data: data,
-        queryParameters: queryParameters,
-        options: options,
-        cancelToken: cancelToken,
-      );
-    } on DioException catch (e) {
-      return _handleError(e);
-    }
-  }
-
-  /// PUT 请求
-  Future<Response> put(
-    String url, {
-    Object? data,
-    Map<String, dynamic>? queryParameters,
-    Options? options,
-    CancelToken? cancelToken,
-  }) async {
-    try {
-      return await dio.put(
-        url,
-        data: data,
         queryParameters: queryParameters,
         options: options,
         cancelToken: cancelToken,
@@ -190,58 +118,52 @@ class _CookieInterceptor extends Interceptor {
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     final cookies = Pref.cookies;
     final fullUrl = options.uri.toString();
-    
-    debugPrint('Original URL: $fullUrl');
-    
+    final host = options.uri.host.toLowerCase();
+
     // 判断请求类型
-    final isApiZhihu = fullUrl.contains('api.zhihu.com');
-    final isWwwZhihu = fullUrl.contains('www.zhihu.com');
-    
+    final isApiZhihu = host == 'api.zhihu.com';
+    final isWwwZhihu = host == 'www.zhihu.com';
+    final isZhihuHost = host == 'zhihu.com' || host.endsWith('.zhihu.com');
+
     if (isApiZhihu) {
       // api.zhihu.com 请求：使用 Android 客户端 headers（不重写 URL，不使用签名）
       // 参考 Hydrogen muk.lua 的 apphead 配置
       options.headers['x-api-version'] = '3.1.8';
-      options.headers['x-app-za'] = 'OS=Android&VersionName=10.12.0&VersionCode=21210&Product=com.zhihu.android&Installer=Google+Play&DeviceType=AndroidPhone';
+      options.headers['x-app-za'] =
+          'OS=Android&VersionName=10.12.0&VersionCode=21210&Product=com.zhihu.android&Installer=Google+Play&DeviceType=AndroidPhone';
       options.headers['x-app-version'] = '10.12.0';
       options.headers['x-app-bundleid'] = 'com.zhihu.android';
       options.headers['x-app-flavor'] = 'play';
       options.headers['x-app-build'] = 'release';
       options.headers['x-network-type'] = 'WiFi';
       options.headers['user-agent'] = 'com.zhihu.android/Futureve/10.12.0';
-      
+
       if (cookies != null && cookies.isNotEmpty) {
         options.headers['cookie'] = cookies;
       }
-      
-      debugPrint('Using Android client headers for api.zhihu.com');
-      
     } else if (isWwwZhihu) {
       // www.zhihu.com 请求：使用 Web 端签名（zse96）
       if (cookies != null && cookies.isNotEmpty) {
         options.headers['cookie'] = cookies;
-        
+
         final result = Zse96Encrypt.generateSignHeadersWithUrl(
           url: fullUrl,
           cookies: cookies,
         );
-        
-        debugPrint('Rewritten URL: ${result.rewrittenUrl}');
-        debugPrint('Generated Headers: ${result.headers}');
-        
+
         // www.zhihu.com 不需要 URL 重写，直接添加签名
-        options.headers['user-agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        options.headers['user-agent'] =
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         options.headers['Referer'] = 'https://www.zhihu.com/';
         options.headers.addAll(result.headers);
-        
-        debugPrint('Using Web client headers with zse96 signature');
       }
-    } else {
-      // 其他请求：添加通用 cookies
+    } else if (isZhihuHost) {
+      // 只允许将 Cookie 发送到知乎自有域名。
       if (cookies != null && cookies.isNotEmpty) {
         options.headers['cookie'] = cookies;
       }
     }
-    
+
     handler.next(options);
   }
 

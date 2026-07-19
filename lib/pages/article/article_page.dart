@@ -26,9 +26,11 @@ class _ArticlePageState extends State<ArticlePage> {
   Map<String, dynamic>? _articleData;
   String? _articleId;
   final ScrollController _scrollController = ScrollController();
+  int _loadGeneration = 0;
 
   @override
   void dispose() {
+    _loadGeneration++;
     _scrollController.dispose();
     super.dispose();
   }
@@ -38,13 +40,13 @@ class _ArticlePageState extends State<ArticlePage> {
     super.initState();
     final arguments = Get.arguments as Map<String, dynamic>?;
     _articleId = widget.articleId ?? arguments?['articleId'];
-    
+
     // 同步检查缓存，确保首帧渲染
     if (_articleId != null && ArticleHttp.cache.containsKey(_articleId)) {
-       _articleData = ArticleHttp.cache[_articleId];
-       _loadingState.value = Success(_articleData!);
+      _articleData = ArticleHttp.cache[_articleId];
+      _loadingState.value = Success(_articleData!);
     } else {
-       _loadData();
+      _loadData();
     }
   }
 
@@ -54,12 +56,15 @@ class _ArticlePageState extends State<ArticlePage> {
       return;
     }
 
+    final generation = ++_loadGeneration;
+
     // 如果已经在 initState 中同步加载了缓存并设置了 Success，则无需再次 Loading
     if (_loadingState.value is! Success) {
       _loadingState.value = const Loading();
     }
-    
+
     final result = await ArticleHttp.getArticle(_articleId!);
+    if (!mounted || generation != _loadGeneration) return;
 
     if (result is Success<Map<String, dynamic>>) {
       _articleData = result.response;
@@ -95,17 +100,14 @@ class _ArticlePageState extends State<ArticlePage> {
         }
 
         final data = _articleData!;
-        
-        // 调试: 打印数据 keys
-        debugPrint('ArticlePage: keys=${data.keys.toList()}');
 
         final title = data['title'] ?? '';
         final excerpt = data['excerpt'] ?? '';
         final contentRaw = data['content'] ?? data['detail'];
-        final content = (contentRaw != null && contentRaw.toString().isNotEmpty) 
-            ? contentRaw 
+        final content = (contentRaw != null && contentRaw.toString().isNotEmpty)
+            ? contentRaw
             : '<p><i>(正文内容为空，显示摘要)</i></p><p>$excerpt</p>';
-            
+
         final author = data['author'] as Map<String, dynamic>?;
         final voteupCount = data['voteup_count'] ?? 0;
         final commentCount = data['comment_count'] ?? 0;
@@ -132,139 +134,131 @@ class _ArticlePageState extends State<ArticlePage> {
                   floating: true,
                   snap: true,
                   title: const Text('专栏文章'),
-                  actions: [
-                    IconButton(
-                      icon: const Icon(Icons.share_outlined),
-                      onPressed: () {},
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.more_vert),
-                      onPressed: () {},
-                    ),
-                  ],
                 ),
-              // 封面图
-              if (imageUrl.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    width: double.infinity,
-                    height: 200,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
+                // 封面图
+                if (imageUrl.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      width: double.infinity,
                       height: 200,
-                      color: colorScheme.surfaceContainerHighest,
-                    ),
-                    httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
-                    errorWidget: (context, url, error) => const SizedBox.shrink(),
-                  ),
-                ),
-              // 标题
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onSurface,
-                      height: 1.4,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        height: 200,
+                        color: colorScheme.surfaceContainerHighest,
+                      ),
+                      httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
+                      errorWidget: (context, url, error) =>
+                          const SizedBox.shrink(),
                     ),
                   ),
-                ),
-              ),
-              // 作者信息
-              SliverToBoxAdapter(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                // 标题
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onSurface,
+                        height: 1.4,
                       ),
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 20,
-                        backgroundColor: colorScheme.primaryContainer,
-                        backgroundImage: authorAvatar.isNotEmpty
-                            ? CachedNetworkImageProvider(authorAvatar)
-                            : null,
-                        child: authorAvatar.isEmpty
-                            ? Icon(Icons.person, color: colorScheme.onPrimaryContainer)
-                            : null,
+                ),
+                // 作者信息
+                SliverToBoxAdapter(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: colorScheme.outlineVariant.withValues(
+                            alpha: 0.3,
+                          ),
+                        ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              authorName,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: colorScheme.onSurface,
-                              ),
-                            ),
-                            if (authorHeadline.isNotEmpty) ...[
-                              const SizedBox(height: 2),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: colorScheme.primaryContainer,
+                          backgroundImage: authorAvatar.isNotEmpty
+                              ? CachedNetworkImageProvider(authorAvatar)
+                              : null,
+                          child: authorAvatar.isEmpty
+                              ? Icon(
+                                  Icons.person,
+                                  color: colorScheme.onPrimaryContainer,
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               Text(
-                                authorHeadline,
+                                authorName,
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  color: colorScheme.onSurfaceVariant,
-                                  height: 1.0,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: colorScheme.onSurface,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
+                              if (authorHeadline.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  authorHeadline,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colorScheme.onSurfaceVariant,
+                                    height: 1.0,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
-                      ),
-                      OutlinedButton(
-                        onPressed: () {},
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          minimumSize: const Size(0, 32),
-                        ),
-                        child: const Text('关注'),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              // 文章内容
-              SliverToBoxAdapter(
+                // 文章内容
+                SliverToBoxAdapter(
                   child: CustomHtml(
                     content: content,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
                     fontSize: 17,
                   ),
-              ),
-              // 底部间距
-              // 评论区
-              SliverToBoxAdapter(
-                child: _articleId != null 
-                  ? InlineCommentWidget(
-                      resourceId: _articleId!,
-                      resourceType: 'articles',
-                      showHeader: true,
-                    )
-                  : const SizedBox.shrink(),
-              ),
+                ),
+                // 底部间距
+                // 评论区
+                SliverToBoxAdapter(
+                  child: _articleId != null
+                      ? InlineCommentWidget(
+                          resourceId: _articleId!,
+                          resourceType: 'articles',
+                          showHeader: true,
+                        )
+                      : const SizedBox.shrink(),
+                ),
 
-              // 底部间距
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 100),
-              ),
-            ],
+                // 底部间距
+                const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              ],
+            ),
           ),
-        ),
           // 底部操作栏
           bottomNavigationBar: BlurBottomBar(
             padding: EdgeInsets.only(
@@ -278,7 +272,6 @@ class _ArticlePageState extends State<ArticlePage> {
                 _ActionButton(
                   icon: Icons.thumb_up_outlined,
                   label: _formatCount(voteupCount),
-                  onTap: () {},
                 ),
                 const SizedBox(width: 24),
                 _ActionButton(
@@ -295,26 +288,14 @@ class _ArticlePageState extends State<ArticlePage> {
                     }
                   },
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.bookmark_border),
-                  onPressed: () {},
-                ),
-                IconButton(
-                  icon: const Icon(Icons.share_outlined),
-                  onPressed: () {},
-                ),
               ],
             ),
           ),
         );
 
-         // 如果有 heroTag，用 Hero 包裹 Scaffold
+        // 如果有 heroTag，用 Hero 包裹 Scaffold
         if (heroTag != null && heroTag is String && heroTag.isNotEmpty) {
-          return Hero(
-            tag: heroTag,
-            child: scaffoldContent,
-          );
+          return Hero(tag: heroTag, child: scaffoldContent);
         }
         return scaffoldContent;
       }),
@@ -338,38 +319,33 @@ class _ArticlePageState extends State<ArticlePage> {
 class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
-  const _ActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+  const _ActionButton({required this.icon, required this.label, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 20, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+    if (onTap == null) return content;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 20, color: colorScheme.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: content,
     );
   }
 }

@@ -2,23 +2,25 @@ import 'package:flutter/material.dart';
 
 import '../../http/comment_http.dart';
 import '../../http/init.dart';
+import '../../models/common/paging_info.dart';
 import '../../utils/storage.dart';
+import 'app_chrome.dart';
 import 'unified_comment_item.dart';
 
 /// 内联评论组件
-/// 
+///
 /// 用于在回答/文章/想法详情页中嵌入显示评论列表
 /// 参考 PiliPlus 的 dynamics_detail 设计
 class InlineCommentWidget extends StatefulWidget {
   /// 资源 ID（回答/文章/想法 ID）
   final String resourceId;
-  
+
   /// 资源类型：answers, articles, pins
   final String resourceType;
-  
+
   /// 初始显示的评论数量
   final int initialCount;
-  
+
   /// 是否显示标题
   final bool showHeader;
 
@@ -34,7 +36,8 @@ class InlineCommentWidget extends StatefulWidget {
   State<InlineCommentWidget> createState() => _InlineCommentWidgetState();
 }
 
-class _InlineCommentWidgetState extends State<InlineCommentWidget> with AutomaticKeepAliveClientMixin {
+class _InlineCommentWidgetState extends State<InlineCommentWidget>
+    with AutomaticKeepAliveClientMixin {
   final List<dynamic> _comments = [];
   String? _nextUrl;
   int _totalCount = 0;
@@ -42,6 +45,7 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget> with Automati
   bool _hasError = false;
   String _errorMsg = '';
   late String _orderBy;
+  int _loadGeneration = 0;
 
   @override
   bool get wantKeepAlive => true;
@@ -53,9 +57,16 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget> with Automati
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _loadGeneration++;
+    super.dispose();
+  }
+
   Future<void> _loadData({bool loadMore = false}) async {
-    if (_isLoading) return;
-    
+    if (_isLoading && loadMore) return;
+    final generation = loadMore ? _loadGeneration : ++_loadGeneration;
+
     setState(() {
       _isLoading = true;
       _hasError = false;
@@ -76,20 +87,19 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget> with Automati
       );
     }
 
-    if (!mounted) return;
+    if (!mounted || generation != _loadGeneration) return;
 
     if (result is Success<Map<String, dynamic>>) {
       final data = result.response;
-      final paging = data['paging'] as Map<String, dynamic>?;
+      final paging = PagingInfo.fromJson(data['paging']);
       final counts = data['counts'] as Map<String, dynamic>?;
       final commonCounts = data['common_counts'] as Map<String, dynamic>?;
 
-      _nextUrl = (paging != null && paging['is_end'] == false) 
-          ? paging['next'] 
-          : null;
-      
+      _nextUrl = paging.nextUrl;
+
       if (!loadMore) {
-        _totalCount = counts?['total_counts'] ?? commonCounts?['total_counts'] ?? 0;
+        _totalCount =
+            counts?['total_counts'] ?? commonCounts?['total_counts'] ?? 0;
         _comments.clear();
       }
 
@@ -100,11 +110,17 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget> with Automati
         _isLoading = false;
       });
     } else if (result is Error) {
+      final message = result.errMsg;
       setState(() {
         _isLoading = false;
-        _hasError = true;
-        _errorMsg = (result as Error).errMsg;
+        _hasError = _comments.isEmpty;
+        _errorMsg = message;
       });
+      if (_comments.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+        );
+      }
     }
   }
 
@@ -151,22 +167,19 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget> with Automati
                 TextButton.icon(
                   onPressed: _showSortOptions,
                   icon: Icon(
-                    Icons.sort_rounded, 
+                    Icons.sort_rounded,
                     size: 18,
                     color: colorScheme.primary,
                   ),
                   label: Text(
                     _orderBy == 'score' ? '按热度' : '按时间',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: colorScheme.primary,
-                    ),
+                    style: TextStyle(fontSize: 13, color: colorScheme.primary),
                   ),
                 ),
               ],
             ),
           ),
-        
+
         // 评论列表
         if (_hasError)
           _buildErrorWidget()
@@ -176,11 +189,10 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget> with Automati
           _buildEmptyWidget()
         else
           ..._buildCommentList(),
-        
+
         // 加载更多
-        if (_nextUrl != null && !_isLoading)
-          _buildLoadMoreButton(),
-        
+        if (_nextUrl != null && !_isLoading) _buildLoadMoreButton(),
+
         // 底部间距
         const SizedBox(height: 20),
       ],
@@ -189,39 +201,46 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget> with Automati
 
   void _showSortOptions() {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     showModalBottomSheet(
       context: context,
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            title: const Text('按热度排序'),
-            trailing: _orderBy == 'score' 
-                ? Icon(Icons.check, color: colorScheme.primary) 
-                : null,
-            onTap: () {
-              Navigator.pop(context);
-              if (_orderBy != 'score') {
-                _orderBy = 'score';
-                _loadData();
-              }
-            },
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => TritiumGlassSheet(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 12, 10, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text('按热度排序'),
+                trailing: _orderBy == 'score'
+                    ? Icon(Icons.check, color: colorScheme.primary)
+                    : null,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  if (_orderBy != 'score') {
+                    _orderBy = 'score';
+                    _loadData();
+                  }
+                },
+              ),
+              ListTile(
+                title: const Text('按时间排序'),
+                trailing: _orderBy == 'ts'
+                    ? Icon(Icons.check, color: colorScheme.primary)
+                    : null,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  if (_orderBy != 'ts') {
+                    _orderBy = 'ts';
+                    _loadData();
+                  }
+                },
+              ),
+            ],
           ),
-          ListTile(
-            title: const Text('按时间排序'),
-            trailing: _orderBy == 'ts' 
-                ? Icon(Icons.check, color: colorScheme.primary) 
-                : null,
-            onTap: () {
-              Navigator.pop(context);
-              if (_orderBy != 'ts') {
-                _orderBy = 'ts';
-                _loadData();
-              }
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -247,10 +266,7 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget> with Automati
           children: [
             Text(_errorMsg, style: const TextStyle(color: Colors.grey)),
             const SizedBox(height: 8),
-            TextButton(
-              onPressed: _loadData,
-              child: const Text('重试'),
-            ),
+            TextButton(onPressed: _loadData, child: const Text('重试')),
           ],
         ),
       ),
@@ -278,7 +294,7 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget> with Automati
 
   Widget _buildLoadMoreButton() {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: InkWell(

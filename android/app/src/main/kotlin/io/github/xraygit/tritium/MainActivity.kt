@@ -1,4 +1,4 @@
-package com.tritium.tritium
+package io.github.xraygit.tritium
 
 import io.flutter.embedding.android.FlutterActivity
 

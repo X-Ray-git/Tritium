@@ -6,14 +6,14 @@ import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
-import 'package:dynamic_color/dynamic_color.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import 'common/constants/constants.dart';
 import 'common/theme/theme_utils.dart';
-import 'common/theme/theme_color_type.dart';
 import 'common/widgets/loading_widget.dart';
 import 'router/app_pages.dart';
 import 'services/account_service.dart';
+import 'services/app_version_service.dart';
 import 'utils/storage.dart';
 import 'http/init.dart';
 
@@ -22,10 +22,10 @@ void main() async {
 
   // 初始化存储
   await GStorage.init();
+  await AppVersionService.init();
 
   // 初始化网络请求
   Request();
-  Request.setCookie();
 
   // 注册服务
   Get.put(AccountService());
@@ -46,16 +46,18 @@ void main() async {
   if (Platform.isAndroid) {
     try {
       final modes = await FlutterDisplayMode.supported;
-      
+
       // 从存储中获取设置
       final savedModeStr = GStorage.setting.get(StorageKeys.displayMode);
       DisplayMode? targetMode;
-      
+
       if (savedModeStr != null) {
         // 尝试匹配保存的模式
-        targetMode = modes.firstWhereOrNull((m) => m.toString() == savedModeStr);
+        targetMode = modes.firstWhereOrNull(
+          (m) => m.toString() == savedModeStr,
+        );
       }
-      
+
       // 如果没有保存的设置，默认使用最高刷新率
       if (targetMode == null) {
         DisplayMode? maxMode;
@@ -80,117 +82,41 @@ void main() async {
   runApp(const TritiumApp());
 }
 
-class TritiumApp extends StatefulWidget {
+class TritiumApp extends StatelessWidget {
   const TritiumApp({super.key});
 
   @override
-  State<TritiumApp> createState() => _TritiumAppState();
-}
-
-class _TritiumAppState extends State<TritiumApp> {
-  ColorScheme? _lightDynamic;
-  ColorScheme? _darkDynamic;
-
-  @override
-  void initState() {
-    super.initState();
-    _initDynamicColor();
-  }
-
-  Future<void> _initDynamicColor() async {
-    if (!Pref.dynamicColor) return;
-    
-    try {
-      final corePalette = await DynamicColorPlugin.getCorePalette();
-      if (corePalette != null) {
-        setState(() {
-          _lightDynamic = corePalette.toColorScheme();
-          _darkDynamic = corePalette.toColorScheme(brightness: Brightness.dark);
-        });
-        return;
-      }
-
-      final accentColor = await DynamicColorPlugin.getAccentColor();
-      if (accentColor != null) {
-        setState(() {
-          _lightDynamic = ThemeUtils.colorSchemeFromSeed(
-            seedColor: accentColor,
-            brightness: Brightness.light,
-          );
-          _darkDynamic = ThemeUtils.colorSchemeFromSeed(
-            seedColor: accentColor,
-            brightness: Brightness.dark,
-          );
-        });
-      }
-    } catch (_) {}
-  }
-
-  @override
   Widget build(BuildContext context) {
-    // 判断是否使用动态取色
-    final useDynamicColor = Pref.dynamicColor && 
-        _lightDynamic != null && 
-        _darkDynamic != null;
-
-    // 获取主题颜色
-    final brandColor = themeColorTypes[Pref.customColor].color;
-
-    // 生成 ColorScheme
-    final lightColorScheme = useDynamicColor
-        ? _lightDynamic!
-        : ThemeUtils.colorSchemeFromSeed(
-            seedColor: brandColor,
-            brightness: Brightness.light,
-          );
-
-    final darkColorScheme = useDynamicColor
-        ? _darkDynamic!
-        : ThemeUtils.colorSchemeFromSeed(
-            seedColor: brandColor,
-            brightness: Brightness.dark,
-          );
-
-    return GetMaterialApp(
-      title: Constants.appName,
-      debugShowCheckedModeBanner: false,
-      
-      // 主题配置
-      theme: ThemeUtils.getThemeData(
-        colorScheme: lightColorScheme,
-        isDynamic: useDynamicColor,
+    return ValueListenableBuilder<Box>(
+      valueListenable: GStorage.setting.listenable(
+        keys: const [StorageKeys.themeMode],
       ),
-      darkTheme: ThemeUtils.getThemeData(
-        colorScheme: darkColorScheme,
-        isDark: true,
-        isDynamic: useDynamicColor,
+      builder: (context, _, _) => GetMaterialApp(
+        title: Constants.appName,
+        debugShowCheckedModeBanner: false,
+        theme: ThemeUtils.light(),
+        darkTheme: ThemeUtils.dark(),
+        themeMode: Pref.themeMode,
+
+        localizationsDelegates: const [
+          GlobalCupertinoLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        locale: const Locale('zh', 'CN'),
+        fallbackLocale: const Locale('zh', 'CN'),
+        supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
+
+        initialRoute: Routes.main,
+        getPages: appPages,
+        defaultTransition: Transition.native,
+
+        builder: FlutterSmartDialog.init(
+          toastBuilder: (String msg) => _CustomToast(msg: msg),
+          loadingBuilder: (msg) => LoadingWidget(msg: msg),
+        ),
+        navigatorObservers: [FlutterSmartDialog.observer],
       ),
-      themeMode: Pref.themeMode,
-
-      // 本地化
-      localizationsDelegates: const [
-        GlobalCupertinoLocalizations.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-      ],
-      locale: const Locale('zh', 'CN'),
-      fallbackLocale: const Locale('zh', 'CN'),
-      supportedLocales: const [
-        Locale('zh', 'CN'),
-        Locale('en', 'US'),
-      ],
-
-      // 路由配置
-      initialRoute: Routes.main,
-      getPages: appPages,
-      defaultTransition: Transition.native,
-
-      // SmartDialog 配置
-      builder: FlutterSmartDialog.init(
-        toastBuilder: (String msg) => _CustomToast(msg: msg),
-        loadingBuilder: (msg) => LoadingWidget(msg: msg),
-      ),
-      navigatorObservers: [FlutterSmartDialog.observer],
     );
   }
 }
@@ -204,21 +130,31 @@ class _CustomToast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 30),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: BoxDecoration(
-        color: colorScheme.inverseSurface,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        msg,
-        style: TextStyle(
-          color: colorScheme.onInverseSurface,
-          fontSize: 14,
+
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(24, 0, 24, 48),
+        constraints: const BoxConstraints(maxWidth: 320),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: colorScheme.inverseSurface.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.45),
+            width: 0.5,
+          ),
         ),
-        textAlign: TextAlign.center,
+        child: Text(
+          msg,
+          style: TextStyle(
+            color: colorScheme.onInverseSurface,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }

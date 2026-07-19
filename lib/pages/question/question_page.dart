@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../http/content_http.dart';
 import '../../http/init.dart';
+import '../../models/common/paging_info.dart';
 import '../../common/widgets/loading_widget.dart';
 import '../../common/widgets/error_widget.dart' as custom;
 import '../../router/app_pages.dart';
@@ -23,11 +24,12 @@ class QuestionPage extends StatefulWidget {
 class _QuestionPageState extends State<QuestionPage> {
   final _loadingState = Rx<LoadingState<Map<String, dynamic>>>(const Loading());
   final _answers = <Map<String, dynamic>>[].obs;
-  
+
   Map<String, dynamic>? _questionData;
   String? _questionId;
   String? _nextUrl;
   bool _isLoadingMore = false;
+  int _loadGeneration = 0;
   bool _isDetailExpanded = false;
   late final RxString _sortBy;
 
@@ -37,7 +39,7 @@ class _QuestionPageState extends State<QuestionPage> {
     final arguments = Get.arguments as Map<String, dynamic>?;
     _questionId = widget.questionId ?? arguments?['questionId'];
     _sortBy = RxString(Pref.defaultAnswerSort);
-    
+
     // 检查缓存，实现即时渲染
     if (_questionId != null && QuestionHttp.cache.containsKey(_questionId)) {
       _questionData = QuestionHttp.cache[_questionId];
@@ -48,27 +50,32 @@ class _QuestionPageState extends State<QuestionPage> {
       _loadData();
     }
   }
-  
+
   /// 仅加载回答列表（问题详情已缓存时使用）
   Future<void> _loadAnswers() async {
     if (_questionId == null) return;
-    
+    final generation = ++_loadGeneration;
+    _isLoadingMore = false;
+
     final answersResult = await QuestionHttp.getQuestionAnswers(
       questionId: _questionId!,
       sortBy: _sortBy.value,
     );
+    if (!mounted || generation != _loadGeneration) return;
     if (answersResult is Success<Map<String, dynamic>>) {
       final data = answersResult.response;
-      _answers.value = (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
-      _nextUrl = data['paging']?['next'];
+      _answers.value =
+          (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ??
+          [];
+      _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
+    } else if (answersResult is Error) {
+      _nextUrl = null;
+      Get.snackbar('回答加载失败', (answersResult as Error).errMsg);
     }
   }
 
   Widget _buildHtmlContent(String content, ColorScheme colorScheme) {
-    return CustomHtml(
-      content: content,
-      fontSize: 15,
-    );
+    return CustomHtml(content: content, fontSize: 15);
   }
 
   Future<void> _loadData() async {
@@ -77,10 +84,13 @@ class _QuestionPageState extends State<QuestionPage> {
       return;
     }
 
+    final generation = ++_loadGeneration;
+    _isLoadingMore = false;
     _loadingState.value = const Loading();
-    
+
     // 加载问题详情
     final questionResult = await QuestionHttp.getQuestion(_questionId!);
+    if (!mounted || generation != _loadGeneration) return;
     if (questionResult is! Success<Map<String, dynamic>>) {
       _loadingState.value = Error((questionResult as Error).errMsg);
       return;
@@ -92,10 +102,16 @@ class _QuestionPageState extends State<QuestionPage> {
       questionId: _questionId!,
       sortBy: _sortBy.value,
     );
+    if (!mounted || generation != _loadGeneration) return;
     if (answersResult is Success<Map<String, dynamic>>) {
       final data = answersResult.response;
-      _answers.value = (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
-      _nextUrl = data['paging']?['next'];
+      _answers.value =
+          (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ??
+          [];
+      _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
+    } else if (answersResult is Error) {
+      _nextUrl = null;
+      Get.snackbar('回答加载失败', (answersResult as Error).errMsg);
     }
 
     _loadingState.value = questionResult;
@@ -103,6 +119,7 @@ class _QuestionPageState extends State<QuestionPage> {
 
   Future<void> _loadMore() async {
     if (_isLoadingMore || _nextUrl == null) return;
+    final generation = _loadGeneration;
     _isLoadingMore = true;
 
     final result = await QuestionHttp.getQuestionAnswers(
@@ -111,11 +128,17 @@ class _QuestionPageState extends State<QuestionPage> {
       // nextUrl usually contains sort param, but good to ensure consistency if API changes
     );
 
+    if (!mounted || generation != _loadGeneration) return;
+
     if (result is Success<Map<String, dynamic>>) {
       final data = result.response;
-      final items = (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
+      final items =
+          (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ??
+          [];
       _answers.addAll(items);
-      _nextUrl = data['paging']?['next'];
+      _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
+    } else if (result is Error) {
+      Get.snackbar('加载失败', (result as Error).errMsg);
     }
 
     _isLoadingMore = false;
@@ -170,21 +193,7 @@ class _QuestionPageState extends State<QuestionPage> {
         Widget scaffoldContent = CustomScrollView(
           slivers: [
             // AppBar
-            SliverAppBar(
-              floating: true,
-              snap: true,
-              title: const Text('问题'),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.share_outlined),
-                  onPressed: () {},
-                ),
-                IconButton(
-                  icon: const Icon(Icons.more_vert),
-                  onPressed: () {},
-                ),
-              ],
-            ),
+            SliverAppBar(floating: true, snap: true, title: const Text('问题')),
             // 问题标题
             SliverToBoxAdapter(
               child: Container(
@@ -209,7 +218,7 @@ class _QuestionPageState extends State<QuestionPage> {
                         builder: (context) {
                           // 简单的长度判定，如果内容较短则直接显示
                           final bool isLongContent = detail.length > 300;
-                          
+
                           if (!isLongContent) {
                             return _buildHtmlContent(detail, colorScheme);
                           }
@@ -226,7 +235,10 @@ class _QuestionPageState extends State<QuestionPage> {
                                       height: 200,
                                       clipBehavior: Clip.hardEdge,
                                       decoration: const BoxDecoration(),
-                                      child: _buildHtmlContent(detail, colorScheme),
+                                      child: _buildHtmlContent(
+                                        detail,
+                                        colorScheme,
+                                      ),
                                     ),
                                     // 渐变遮罩
                                     Positioned(
@@ -240,7 +252,9 @@ class _QuestionPageState extends State<QuestionPage> {
                                             begin: Alignment.topCenter,
                                             end: Alignment.bottomCenter,
                                             colors: [
-                                              colorScheme.surface.withValues(alpha: 0.0),
+                                              colorScheme.surface.withValues(
+                                                alpha: 0.0,
+                                              ),
                                               colorScheme.surface,
                                             ],
                                           ),
@@ -249,7 +263,7 @@ class _QuestionPageState extends State<QuestionPage> {
                                     ),
                                   ],
                                 ),
-                              
+
                               // 展开/收起按钮
                               GestureDetector(
                                 onTap: () {
@@ -258,7 +272,9 @@ class _QuestionPageState extends State<QuestionPage> {
                                   });
                                 },
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
                                   alignment: Alignment.center,
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
@@ -272,7 +288,9 @@ class _QuestionPageState extends State<QuestionPage> {
                                         ),
                                       ),
                                       Icon(
-                                        _isDetailExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                                        _isDetailExpanded
+                                            ? Icons.keyboard_arrow_up
+                                            : Icons.keyboard_arrow_down,
                                         color: colorScheme.primary,
                                         size: 20,
                                       ),
@@ -289,7 +307,10 @@ class _QuestionPageState extends State<QuestionPage> {
                     // 统计信息
                     Row(
                       children: [
-                        _StatItem(label: '关注者', value: _formatCount(followerCount)),
+                        _StatItem(
+                          label: '关注者',
+                          value: _formatCount(followerCount),
+                        ),
                         const SizedBox(width: 24),
                         _StatItem(label: '被浏览', value: _formatCount(viewCount)),
                       ],
@@ -301,9 +322,14 @@ class _QuestionPageState extends State<QuestionPage> {
             // 分隔线和回答数
             SliverToBoxAdapter(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  color: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -318,103 +344,103 @@ class _QuestionPageState extends State<QuestionPage> {
                     const Spacer(),
                     const Spacer(),
                     // 排序按钮
-                    Obx(() => TextButton.icon(
-                      onPressed: () {
-                         showModalBottomSheet(
-                          context: context,
-                          builder: (context) => Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ListTile(
-                                title: const Text('按热度排序'),
-                                trailing: _sortBy.value == 'default' ? Icon(Icons.check, color: colorScheme.primary) : null,
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  if (_sortBy.value != 'default') {
-                                    _sortBy.value = 'default';
-                                    _loadData();
-                                  }
-                                },
-                              ),
-                              ListTile(
-                                title: const Text('按时间排序'),
-                                trailing: _sortBy.value == 'created' ? Icon(Icons.check, color: colorScheme.primary) : null,
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  if (_sortBy.value != 'created') {
-                                    _sortBy.value = 'created';
-                                    _loadData();
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      icon: Icon(Icons.sort, size: 18, color: colorScheme.onSurfaceVariant),
-                      label: Text(
-                        _sortBy.value == 'default' ? '默认排序' : '最新排序',
-                        style: TextStyle(color: colorScheme.onSurfaceVariant),
+                    Obx(
+                      () => TextButton.icon(
+                        onPressed: () {
+                          showModalBottomSheet(
+                            context: context,
+                            builder: (context) => Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListTile(
+                                  title: const Text('按热度排序'),
+                                  trailing: _sortBy.value == 'default'
+                                      ? Icon(
+                                          Icons.check,
+                                          color: colorScheme.primary,
+                                        )
+                                      : null,
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    if (_sortBy.value != 'default') {
+                                      _sortBy.value = 'default';
+                                      _loadData();
+                                    }
+                                  },
+                                ),
+                                ListTile(
+                                  title: const Text('按时间排序'),
+                                  trailing: _sortBy.value == 'created'
+                                      ? Icon(
+                                          Icons.check,
+                                          color: colorScheme.primary,
+                                        )
+                                      : null,
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    if (_sortBy.value != 'created') {
+                                      _sortBy.value = 'created';
+                                      _loadData();
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        icon: Icon(
+                          Icons.sort,
+                          size: 18,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        label: Text(
+                          _sortBy.value == 'default' ? '默认排序' : '最新排序',
+                          style: TextStyle(color: colorScheme.onSurfaceVariant),
+                        ),
                       ),
-                    )),
-                    // 暂时隐藏写回答，位置不够
-                    // TextButton.icon(
-                    //   onPressed: () {},
-                    //   icon: Icon(Icons.edit_outlined, size: 18, color: colorScheme.primary),
-                    //   label: Text('写回答', style: TextStyle(color: colorScheme.primary)),
-                    // ),
+                    ),
                   ],
                 ),
               ),
             ),
             // 回答列表
             SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  if (index >= _answers.length) {
-                    // 加载更多
-                    _loadMore();
-                    return const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Center(
-                        child: SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                if (index >= _answers.length) {
+                  // 加载更多
+                  _loadMore();
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                    );
-                  }
-
-                  final answer = _answers[index];
-                  return _AnswerItem(
-                    answer: answer,
-                    questionId: _questionId!,
-                    allAnswerIds: answerIds,
+                    ),
                   );
-                },
-                childCount: _answers.length + (_nextUrl != null ? 1 : 0),
-              ),
+                }
+
+                final answer = _answers[index];
+                return _AnswerItem(
+                  answer: answer,
+                  questionId: _questionId!,
+                  allAnswerIds: answerIds,
+                );
+              }, childCount: _answers.length + (_nextUrl != null ? 1 : 0)),
             ),
             // 底部间距
-            const SliverToBoxAdapter(
-              child: SizedBox(height: 32),
-            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
           ],
         );
 
         Widget body = scaffoldContent;
-         // 如果有 heroTag，用 Hero 包裹 Scaffold
+        // 如果有 heroTag，用 Hero 包裹 Scaffold
         if (heroTag != null && heroTag is String && heroTag.isNotEmpty) {
-          body = Hero(
-            tag: heroTag,
-            child: scaffoldContent,
-          );
+          body = Hero(tag: heroTag, child: scaffoldContent);
         }
 
-        return Scaffold(
-          body: body,
-        );
+        return Scaffold(body: body);
       }),
     );
   }
@@ -457,7 +483,7 @@ class _StatItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -472,10 +498,7 @@ class _StatItem extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 12,
-            color: colorScheme.onSurfaceVariant,
-          ),
+          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
         ),
       ],
     );
@@ -489,7 +512,7 @@ class _AnswerItem extends StatelessWidget {
   final List<String> allAnswerIds;
 
   const _AnswerItem({
-    required this.answer, 
+    required this.answer,
     required this.questionId,
     required this.allAnswerIds,
   });
@@ -497,10 +520,10 @@ class _AnswerItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     // API 返回的数据可能包裹在 target 字段中 (question_feed_card)
     final target = (answer['target'] as Map<String, dynamic>?) ?? answer;
-    
+
     final author = target['author'] as Map<String, dynamic>?;
     final excerpt = target['excerpt'] ?? '';
     final voteupCount = target['voteup_count'] ?? 0;
@@ -510,7 +533,7 @@ class _AnswerItem extends StatelessWidget {
     final authorHeadline = author?['headline'] ?? '';
     final authorAvatar = author?['avatar_url'] ?? '';
     final answerId = target['id']?.toString();
-    
+
     // 预加载回答详情
     if (answerId != null) {
       AnswerHttp.preload(answerId);
@@ -522,7 +545,7 @@ class _AnswerItem extends StatelessWidget {
           Get.toNamed(
             Routes.answer,
             arguments: {
-              'questionId': questionId, 
+              'questionId': questionId,
               'answerId': answerId,
               'answerIds': allAnswerIds,
             },
@@ -551,7 +574,11 @@ class _AnswerItem extends StatelessWidget {
                       ? CachedNetworkImageProvider(authorAvatar)
                       : null,
                   child: authorAvatar.isEmpty
-                      ? Icon(Icons.person, size: 16, color: colorScheme.onPrimaryContainer)
+                      ? Icon(
+                          Icons.person,
+                          size: 16,
+                          color: colorScheme.onPrimaryContainer,
+                        )
                       : null,
                 ),
                 const SizedBox(width: 10),
@@ -585,7 +612,10 @@ class _AnswerItem extends StatelessWidget {
             const SizedBox(height: 12),
             // 回答摘要
             Text(
-              excerpt.replaceAll(RegExp(r'<[^>]*>', multiLine: true, caseSensitive: true), ''),
+              excerpt.replaceAll(
+                RegExp(r'<[^>]*>', multiLine: true, caseSensitive: true),
+                '',
+              ),
               style: TextStyle(
                 fontSize: 15,
                 color: colorScheme.onSurface,
@@ -598,18 +628,32 @@ class _AnswerItem extends StatelessWidget {
             // 底部操作
             Row(
               children: [
-                Icon(Icons.thumb_up_outlined, size: 16, color: colorScheme.onSurfaceVariant),
+                Icon(
+                  Icons.thumb_up_outlined,
+                  size: 16,
+                  color: colorScheme.onSurfaceVariant,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   _formatCount(voteupCount),
-                  style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(width: 16),
-                Icon(Icons.chat_bubble_outline, size: 16, color: colorScheme.onSurfaceVariant),
+                Icon(
+                  Icons.chat_bubble_outline,
+                  size: 16,
+                  color: colorScheme.onSurfaceVariant,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   _formatCount(commentCount),
-                  style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),

@@ -3,7 +3,8 @@ import 'package:get/get.dart';
 import '../../utils/storage.dart';
 
 /// 首页控制器
-class HomeController extends GetxController with GetSingleTickerProviderStateMixin {
+class HomeController extends GetxController
+    with GetSingleTickerProviderStateMixin {
   late TabController tabController;
 
   /// 当前 Tab 索引
@@ -13,7 +14,11 @@ class HomeController extends GetxController with GetSingleTickerProviderStateMix
   void onInit() {
     super.onInit();
     final initialIndex = Pref.defaultHomeTab;
-    tabController = TabController(length: 3, vsync: this, initialIndex: initialIndex);
+    tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: initialIndex,
+    );
     currentTabIndex.value = initialIndex; // Sync observable
     tabController.addListener(() {
       currentTabIndex.value = tabController.index;
