@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:get/get.dart';
 
 import '../../http/feed_http.dart';
@@ -205,7 +204,10 @@ class _RecommendPageState extends State<RecommendPage> {
           ),
           addAutomaticKeepAlives: false,
           addRepaintBoundaries: false, // 已经在子组件 FeedCard 中处理
-          scrollCacheExtent: const ScrollCacheExtent.pixels(500),
+          // Flutter 3.41 仍使用像素值 cacheExtent；与本地新版的
+          // ScrollCacheExtent.pixels(500) 行为一致，并保持 CI 兼容。
+          // ignore: deprecated_member_use
+          cacheExtent: 500,
           itemCount: controller.feedList.length + (controller.hasMore ? 1 : 0),
           itemBuilder: (context, index) {
             if (index == controller.feedList.length) {
