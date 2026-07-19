@@ -11,5 +11,14 @@
 - GitHub Actions 引用的 action 主版本 tag 已逐项在官方远端确认存在。
 - 登录页 Debug 检查点未输出 Cookie 值或 URL 查询参数。
 
-仍未覆盖的项目集中在[真机验收清单](device-acceptance.md)。GitHub Actions 的正式
-签名构建还取决于仓库中四个 Android Secrets 是否已经配置。
+仍未覆盖的项目集中在[真机验收清单](device-acceptance.md)。
+
+## 2026-07-19：GitHub 正式签名构建
+
+- Tritium 仓库已配置四项 Android 签名 Secrets，值不写入仓库或日志。
+- GitHub Actions run `29691980662`：版本校验、分析、13 项测试、签名、Release APK
+  构建和 artifact 上传全部通过。
+- APK 证书 SHA-256 为
+  `C677B8C96FE220664BBA662E0ED7F645691C027167997261C1ABFD6E34DC43A3`，与 Auto Folo
+  本地 keystore 证书一致。
+- 本次为 `workflow_dispatch` 内部构建，没有创建 tag 或 GitHub Release。
