@@ -70,4 +70,69 @@ void main() {
     expect(find.text('22'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('collapsed title follows the source title geometry', (
+    tester,
+  ) async {
+    const longTitle = '这是一个用于验证多行标题完全滚出以后顶部标题才出现的测试问题标题';
+    AnswerHttp.cache['a']!['question'] = {'id': 'q', 'title': longTitle};
+
+    await tester.pumpWidget(
+      const GetMaterialApp(
+        home: AnswerPage(questionId: 'q', answerId: 'a', answerIds: ['a', 'b']),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Finder sourceTitle() => find.byWidgetPredicate(
+      (widget) =>
+          widget is Text &&
+          widget.data == longTitle &&
+          widget.style?.fontSize == 20,
+    );
+    AnimatedOpacity collapsedTitle() => tester.widget<AnimatedOpacity>(
+      find.byKey(const Key('answer-collapsed-title')),
+    );
+    double appBarBottom() =>
+        MediaQuery.paddingOf(tester.element(find.byType(AnswerPage))).top + 48;
+
+    expect(sourceTitle(), findsOneWidget);
+    expect(tester.getBottomLeft(sourceTitle()).dy, greaterThan(appBarBottom()));
+    expect(collapsedTitle().opacity, 0);
+    final fixedAppBarRect = tester.getRect(find.byType(AppBar));
+
+    await tester.drag(
+      find.byKey(const Key('answer-scroll-a')),
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
+    expect(sourceTitle(), findsNothing);
+    expect(collapsedTitle().opacity, 1);
+    expect(tester.getRect(find.byType(AppBar)), fixedAppBarRect);
+
+    // 深度阅读后只反向少量时，正文尚未回到顶部，原始标题不得提前展开。
+    await tester.drag(
+      find.byKey(const Key('answer-scroll-a')),
+      const Offset(0, 40),
+    );
+    await tester.pumpAndSettle();
+    if (sourceTitle().evaluate().isNotEmpty) {
+      expect(
+        tester.getBottomLeft(sourceTitle()).dy,
+        lessThanOrEqualTo(appBarBottom()),
+      );
+    }
+    expect(collapsedTitle().opacity, 1);
+    expect(tester.getRect(find.byType(AppBar)), fixedAppBarRect);
+
+    await tester.drag(
+      find.byKey(const Key('answer-scroll-a')),
+      const Offset(0, 600),
+    );
+    await tester.pumpAndSettle();
+    expect(sourceTitle(), findsOneWidget);
+    expect(tester.getBottomLeft(sourceTitle()).dy, greaterThan(appBarBottom()));
+    expect(collapsedTitle().opacity, 0);
+    expect(tester.getRect(find.byType(AppBar)), fixedAppBarRect);
+  });
 }

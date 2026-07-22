@@ -14,6 +14,7 @@ import '../../common/widgets/html/html_chunker.dart';
 import '../../utils/storage.dart';
 import '../../common/widgets/inline_comment_widget.dart';
 import '../../common/widgets/blur_container.dart';
+import '../../common/widgets/app_chrome.dart';
 import '../../utils/comment_preload.dart';
 
 /// 回答详情页 (容器)
@@ -55,10 +56,6 @@ class _AnswerPageState extends State<AnswerPage> {
   late final ValueNotifier<dynamic> _voteupCountNotifier;
   late final ValueNotifier<dynamic> _commentCountNotifier;
   late final ValueNotifier<int> _settledPageIndexNotifier;
-
-  // 滚动控制器
-  final ScrollController _scrollController = ScrollController();
-  static const double _titleScrollThreshold = 60.0; // 标题滚动阈值
   int _loadGeneration = 0;
 
   @override
@@ -99,9 +96,6 @@ class _AnswerPageState extends State<AnswerPage> {
     _settledPageIndexNotifier = ValueNotifier(_currentIndex);
     _syncChromeForCurrentAnswer();
 
-    // 监听滚动
-    _scrollController.addListener(_onScroll);
-
     // 如果列表仅包含单个（且可能是从推荐页进来的），尝试获取完整列表
     if (_answerIds.length <= 1 && _questionId != null) {
       _fetchQuestionAnswers();
@@ -116,8 +110,6 @@ class _AnswerPageState extends State<AnswerPage> {
   @override
   void dispose() {
     _loadGeneration++;
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
     _pageController.dispose();
     _showTitleNotifier.dispose();
     _questionTitleNotifier.dispose();
@@ -125,14 +117,6 @@ class _AnswerPageState extends State<AnswerPage> {
     _commentCountNotifier.dispose();
     _settledPageIndexNotifier.dispose();
     super.dispose();
-  }
-
-  void _onScroll() {
-    // 仅更新 ValueNotifier，不触发 setState
-    final shouldShow = _scrollController.offset >= _titleScrollThreshold;
-    if (_showTitleNotifier.value != shouldShow) {
-      _showTitleNotifier.value = shouldShow;
-    }
   }
 
   /// 获取问题下的回答列表
@@ -233,8 +217,6 @@ class _AnswerPageState extends State<AnswerPage> {
       if (!mounted) return;
       _syncChromeForCurrentAnswer();
       _settledPageIndexNotifier.value = _currentIndex;
-      _showTitleNotifier.value = false;
-      if (_scrollController.hasClients) _scrollController.jumpTo(0);
       _preloadNeighbors(_currentIndex);
     });
     return false;
@@ -257,113 +239,82 @@ class _AnswerPageState extends State<AnswerPage> {
     }
 
     return Scaffold(
-      body: NestedScrollView(
-        controller: _scrollController,
-        headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
-          final colorScheme = Theme.of(context).colorScheme;
-          return <Widget>[
-            SliverAppBar(
-              pinned: true,
-              scrolledUnderElevation: 2.0,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              title: ValueListenableBuilder<String>(
-                valueListenable: _questionTitleNotifier,
-                builder: (context, questionTitle, child) =>
-                    ValueListenableBuilder<bool>(
-                      valueListenable: _showTitleNotifier,
-                      builder: (context, show, child) => AnimatedOpacity(
-                        duration: const Duration(milliseconds: 200),
-                        opacity: show ? 1.0 : 0.0,
-                        child: Text(
-                          questionTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                    ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: InkWell(
-                onTap: () {
-                  if (_questionId != null) {
-                    Get.toNamed(
-                      Routes.question,
-                      arguments: {'questionId': _questionId},
-                    );
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: ValueListenableBuilder<String>(
-                    valueListenable: _questionTitleNotifier,
-                    builder: (context, questionTitle, child) => Text(
-                      questionTitle,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
-                        height: 1.3,
-                      ),
+      appBar: TritiumBlurAppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: ValueListenableBuilder<String>(
+          valueListenable: _questionTitleNotifier,
+          builder: (context, questionTitle, child) =>
+              ValueListenableBuilder<bool>(
+                valueListenable: _showTitleNotifier,
+                builder: (context, show, child) => AnimatedOpacity(
+                  key: const Key('answer-collapsed-title'),
+                  duration: const Duration(milliseconds: 200),
+                  opacity: show ? 1.0 : 0.0,
+                  child: Text(
+                    questionTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
               ),
-            ),
-          ];
-        },
-        body: NotificationListener<ScrollEndNotification>(
-          onNotification: _handlePageScrollEnd,
-          child: PageView.builder(
-            controller: _pageController,
-            allowImplicitScrolling: true,
-            itemCount: _answerIds.length,
-            onPageChanged: _onPageChanged,
-            itemBuilder: (context, index) {
-              final answerId = _answerIds[index];
-              final commentKey = _commentKeys.putIfAbsent(
-                answerId,
-                GlobalKey.new,
-              );
-              return _AnswerSinglePage(
-                key: ValueKey(answerId),
-                answerId: answerId,
-                questionId: _questionId,
-                commentsKey: commentKey,
-                pageIndex: index,
-                settledPageIndexListenable: _settledPageIndexNotifier,
-                initialData: AnswerHttp.cache.containsKey(answerId)
-                    ? AnswerHttp.cache[answerId]
-                    : null,
-                onQuestionIdLoaded: (qId) {
-                  if (_questionId == null && qId.isNotEmpty) {
-                    _questionId = qId;
-                    _fetchQuestionAnswers();
-                  }
-                },
-                onDataLoaded: (data) {
-                  if (!_hasPendingPageTransition &&
-                      _answerIds[_currentIndex] == answerId) {
-                    _syncChromeForCurrentAnswer(data);
-                  }
-                },
-                onContentReady: () {
-                  _contentReadyAnswerIds.add(answerId);
-                  if (_pendingCommentAnswerId == answerId) {
-                    _scrollToComments(answerId);
-                  }
-                },
-              );
-            },
-          ),
+        ),
+      ),
+      body: NotificationListener<ScrollEndNotification>(
+        onNotification: _handlePageScrollEnd,
+        child: PageView.builder(
+          controller: _pageController,
+          allowImplicitScrolling: true,
+          itemCount: _answerIds.length,
+          onPageChanged: _onPageChanged,
+          itemBuilder: (context, index) {
+            final answerId = _answerIds[index];
+            final commentKey = _commentKeys.putIfAbsent(
+              answerId,
+              GlobalKey.new,
+            );
+            return _AnswerSinglePage(
+              key: ValueKey(answerId),
+              answerId: answerId,
+              questionId: _questionId,
+              commentsKey: commentKey,
+              pageIndex: index,
+              settledPageIndexListenable: _settledPageIndexNotifier,
+              initialData: AnswerHttp.cache.containsKey(answerId)
+                  ? AnswerHttp.cache[answerId]
+                  : null,
+              onQuestionIdLoaded: (qId) {
+                if (_questionId == null && qId.isNotEmpty) {
+                  _questionId = qId;
+                  _fetchQuestionAnswers();
+                }
+              },
+              onDataLoaded: (data) {
+                if (!_hasPendingPageTransition &&
+                    _answerIds[_currentIndex] == answerId) {
+                  _syncChromeForCurrentAnswer(data);
+                }
+              },
+              onTitleVisibilityChanged: (visible) {
+                if (_settledPageIndexNotifier.value == index &&
+                    _showTitleNotifier.value != visible) {
+                  _showTitleNotifier.value = visible;
+                }
+              },
+              onContentReady: () {
+                _contentReadyAnswerIds.add(answerId);
+                if (_pendingCommentAnswerId == answerId) {
+                  _scrollToComments(answerId);
+                }
+              },
+            );
+          },
         ),
       ),
       bottomNavigationBar: BlurBottomBar(
@@ -433,6 +384,7 @@ class _AnswerSinglePage extends StatefulWidget {
   final Map<String, dynamic>? initialData;
   final ValueChanged<String>? onQuestionIdLoaded;
   final ValueChanged<Map<String, dynamic>>? onDataLoaded;
+  final ValueChanged<bool> onTitleVisibilityChanged;
   final GlobalKey commentsKey;
   final VoidCallback? onContentReady;
   final int pageIndex;
@@ -445,6 +397,7 @@ class _AnswerSinglePage extends StatefulWidget {
     this.initialData,
     this.onQuestionIdLoaded,
     this.onDataLoaded,
+    required this.onTitleVisibilityChanged,
     required this.commentsKey,
     this.onContentReady,
     required this.pageIndex,
@@ -458,6 +411,8 @@ class _AnswerSinglePage extends StatefulWidget {
 class _AnswerSinglePageState extends State<_AnswerSinglePage>
     with AutomaticKeepAliveClientMixin {
   final _loadingState = Rx<LoadingState<Map<String, dynamic>>>(const Loading());
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _questionTitleKey = GlobalKey();
   Map<String, dynamic>? _answerData;
   String? _currentQuestionId;
 
@@ -467,6 +422,8 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
   bool _showComments = false;
   ScrollMetrics? _lastScrollMetrics;
   List<String> _imageUrls = const [];
+  bool _titleVisibilityUpdateScheduled = false;
+  bool _titleIsCovered = false;
   int _loadGeneration = 0;
 
   @override
@@ -477,9 +434,6 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
     super.initState();
     _currentQuestionId = widget.questionId;
     widget.settledPageIndexListenable.addListener(_onSettledPageChanged);
-
-    // 设置滚动监听
-    // _scrollController 移除，交由 NestedScrollView 管理
 
     if (widget.initialData != null) {
       _answerData = widget.initialData;
@@ -531,25 +485,65 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
   @override
   void dispose() {
     _loadGeneration++;
+    _scrollController.dispose();
     widget.settledPageIndexListenable.removeListener(_onSettledPageChanged);
     super.dispose();
   }
 
-  void _onSettledPageChanged() => _maybeShowComments();
+  void _onSettledPageChanged() {
+    _maybeShowComments();
+    if (widget.settledPageIndexListenable.value == widget.pageIndex) {
+      widget.onTitleVisibilityChanged(_titleIsCovered);
+    }
+    _scheduleTitleVisibilityUpdate();
+  }
 
   bool _handleScrollNotification(ScrollNotification notification) {
     if (notification.metrics.axis == Axis.vertical) {
       _lastScrollMetrics = notification.metrics;
       _maybeShowComments();
+      _scheduleTitleVisibilityUpdate();
     }
     return false;
+  }
+
+  void _scheduleTitleVisibilityUpdate() {
+    if (_titleVisibilityUpdateScheduled || !mounted) return;
+    _titleVisibilityUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _titleVisibilityUpdateScheduled = false;
+      if (mounted) _updateTitleVisibility();
+    });
+  }
+
+  void _updateTitleVisibility() {
+    if (widget.settledPageIndexListenable.value != widget.pageIndex) return;
+    final renderObject = _questionTitleKey.currentContext?.findRenderObject();
+    bool covered;
+    if (renderObject is RenderBox && renderObject.attached) {
+      final titleBottom = renderObject
+          .localToGlobal(Offset(0, renderObject.size.height))
+          .dy;
+      final appBarBottom =
+          MediaQuery.viewPaddingOf(context).top + tritiumMobileToolbarHeight;
+      covered = titleBottom <= appBarBottom;
+    } else {
+      // Sliver 被回收只会发生在标题已远离可视区时。
+      covered = _scrollController.hasClients && _scrollController.offset > 0;
+    }
+    if (_titleIsCovered == covered) return;
+    _titleIsCovered = covered;
+    widget.onTitleVisibilityChanged(covered);
   }
 
   void _handleContentReady() {
     _contentLayoutReady = true;
     widget.onContentReady?.call();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _maybeShowComments();
+      if (mounted) {
+        _maybeShowComments();
+        _updateTitleVisibility();
+      }
     });
   }
 
@@ -604,6 +598,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
       if (widget.onDataLoaded != null) {
         widget.onDataLoaded!(_answerData!);
       }
+      _scheduleTitleVisibilityUpdate();
     } else if (result is Error) {
       _loadingState.value = Error((result as Error).errMsg);
     }
@@ -636,8 +631,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
       final excerpt = data['excerpt'] ?? '';
       // Parent 负责 BottomBar，这里不需要 voteup
 
-      // questionTitle 由 parent widget 使用，此处仅在 child 中加载
-      final _ = question?['title'] ?? '';
+      final questionTitle = question?['title']?.toString() ?? '回答详情';
       final authorName = author?['name'] ?? '匿名用户';
       final authorHeadline = author?['headline'] ?? '';
       final authorAvatar = author?['avatar_url'] ?? '';
@@ -658,8 +652,34 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
         child: NotificationListener<ScrollNotification>(
           onNotification: _handleScrollNotification,
           child: CustomScrollView(
+            key: Key('answer-scroll-${widget.answerId}'),
+            controller: _scrollController,
             slivers: [
-              // 标题已移到父组件 NestedScrollView Header
+              SliverToBoxAdapter(
+                child: InkWell(
+                  onTap: () {
+                    if (_currentQuestionId != null) {
+                      Get.toNamed(
+                        Routes.question,
+                        arguments: {'questionId': _currentQuestionId},
+                      );
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: Text(
+                      questionTitle,
+                      key: _questionTitleKey,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               // Author Info
               SliverToBoxAdapter(
                 child: Container(

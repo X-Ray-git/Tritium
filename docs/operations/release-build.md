@@ -53,3 +53,9 @@ scripts/release.sh 0.2.0 -m $'- feat: ...\n- fix: ...' --push
 - APK 文件名为 `Tritium-android-<tag-or-ref>.apk`。
 
 除非用户明确要求发布版本，否则只提交和推送代码，不创建 tag。
+
+## 维护语义
+
+用户要求“触发打包”时，含义固定为发布 Release：使用 `scripts/release.sh` 创建版本
+提交和 annotated tag，推送后等待签名 APK 与 GitHub Release 发布完成。只有用户明确
+要求“内部测试构建”时，才使用 `workflow_dispatch` 仅生成 Actions artifact。

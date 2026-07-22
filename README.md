@@ -21,7 +21,7 @@ Tritium 当前定位为只读客户端，不提供点赞、关注、回复、收
 
 ## 构建
 
-环境要求：Flutter 3.41.6、Android SDK、JDK 17。
+环境要求：Flutter 3.44.6、Android SDK、JDK 17。
 
 ```bash
 flutter pub get

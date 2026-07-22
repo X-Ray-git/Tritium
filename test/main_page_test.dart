@@ -73,5 +73,12 @@ void main() {
 
     expect(find.text('默认内容页'), findsOneWidget);
     expect(find.text('Tritium 固定使用 #3961FF 品牌色'), findsOneWidget);
+    final settingsList = tester.widget<ListView>(
+      find.byKey(const Key('settings-list')),
+    );
+    expect(
+      settingsList.padding!.resolve(TextDirection.ltr).top,
+      tester.getBottomLeft(find.byType(AppBar)).dy + 12,
+    );
   });
 }

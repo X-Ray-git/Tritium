@@ -18,9 +18,10 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final body = ListView(
+      key: const Key('settings-list'),
       padding: EdgeInsets.fromLTRB(
         12,
-        12,
+        MediaQuery.paddingOf(context).top + 12,
         12,
         88 + MediaQuery.paddingOf(context).bottom,
       ),

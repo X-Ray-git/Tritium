@@ -20,5 +20,6 @@
 - Hydrogen 仅作功能模块参考，Auto Folo 仅作设计、维护和发布参考；不修改参考工程。
   经用户确认需要完全一致的基础交互可以受控复用，当前例外是下拉刷新状态机。
 - 不在日志、文档或仓库中记录 Cookie、签名参数、完整登录 URL 或密钥。
-- 除非用户明确要求发布版本，否则不要创建 tag 或 GitHub Release。
+- 除非用户明确要求发布版本，否则不要创建 tag 或 GitHub Release；用户说“触发打包”
+  即表示按 Auto Folo 流程创建版本提交、annotated tag 并发布 GitHub Release。
 - 交付前按[测试约定](docs/operations/testing.md)完成静态检查、测试和 Android 构建。
