@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:tritium/common/theme/theme_utils.dart';
@@ -47,7 +48,7 @@ void main() {
     await storageDirectory.delete(recursive: true);
   });
 
-  testWidgets('main navigation only exposes content and settings', (
+  testWidgets('main navigation exposes recommendation, hot list and settings', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -55,10 +56,17 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byTooltip('内容'), findsOneWidget);
+    expect(find.byTooltip('推荐'), findsOneWidget);
+    expect(find.byTooltip('热榜'), findsOneWidget);
     expect(find.byTooltip('设置'), findsOneWidget);
     expect(find.text('发现'), findsNothing);
     expect(find.text('AI'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Scaffold && widget.extendBodyBehindAppBar,
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();

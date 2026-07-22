@@ -9,7 +9,9 @@ import '../../common/widgets/loading_widget.dart';
 import '../../common/widgets/error_widget.dart' as custom;
 import '../../router/app_pages.dart';
 import '../../common/widgets/html/custom_html.dart';
+import '../../common/widgets/html/html_chunker.dart';
 import '../../utils/storage.dart';
+import '../../common/widgets/app_chrome.dart';
 
 /// 问题详情页
 class QuestionPage extends StatefulWidget {
@@ -75,7 +77,11 @@ class _QuestionPageState extends State<QuestionPage> {
   }
 
   Widget _buildHtmlContent(String content, ColorScheme colorScheme) {
-    return CustomHtml(content: content, fontSize: 15);
+    return CustomHtml(
+      content: content,
+      fontSize: 15,
+      imageUrls: HtmlChunker.extractImageUrls(content),
+    );
   }
 
   Future<void> _loadData() async {
@@ -154,14 +160,14 @@ class _QuestionPageState extends State<QuestionPage> {
 
         if (state is Loading) {
           return const Scaffold(
-            appBar: _SimpleAppBar(title: '问题详情'),
+            appBar: TritiumBlurAppBar(title: TritiumSectionTitle('问题')),
             body: LoadingWidget(msg: '加载中...'),
           );
         }
 
         if (state is Error) {
           return Scaffold(
-            appBar: const _SimpleAppBar(title: '问题详情'),
+            appBar: const TritiumBlurAppBar(title: TritiumSectionTitle('问题')),
             body: custom.ErrorWidget(
               message: (state as Error).errMsg,
               onRetry: _loadData,
@@ -193,7 +199,7 @@ class _QuestionPageState extends State<QuestionPage> {
         Widget scaffoldContent = CustomScrollView(
           slivers: [
             // AppBar
-            SliverAppBar(floating: true, snap: true, title: const Text('问题')),
+            const TritiumSliverAppBar(title: TritiumSectionTitle('问题')),
             // 问题标题
             SliverToBoxAdapter(
               child: Container(
@@ -211,7 +217,6 @@ class _QuestionPageState extends State<QuestionPage> {
                       ),
                     ),
                     if (detail.isNotEmpty) ...[
-                      const SizedBox(height: 12),
                       const SizedBox(height: 12),
                       // 问题描述（支持折叠）
                       Builder(
@@ -456,21 +461,6 @@ class _QuestionPageState extends State<QuestionPage> {
     }
     return num.toString();
   }
-}
-
-/// 简单 AppBar
-class _SimpleAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final String title;
-
-  const _SimpleAppBar({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppBar(title: Text(title));
-  }
-
-  @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 }
 
 /// 统计项

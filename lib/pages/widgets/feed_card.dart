@@ -600,12 +600,9 @@ class FeedCard extends StatelessWidget {
     };
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: buildCardContent(),
       ),
     );
@@ -674,15 +671,12 @@ class FeedCard extends StatelessWidget {
     }
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () => Get.toNamed(
           Routes.answer,
           arguments: {'questionId': questionId, 'answerId': answerId},
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -812,13 +806,10 @@ class FeedCard extends StatelessWidget {
     final articleId = target['id']?.toString();
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () =>
             Get.toNamed(Routes.article, arguments: {'articleId': articleId}),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -826,7 +817,7 @@ class FeedCard extends StatelessWidget {
             if (imageUrl.isNotEmpty)
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(12),
+                  top: Radius.circular(16),
                 ),
                 child: CachedNetworkImage(
                   imageUrl: imageUrl,
@@ -957,7 +948,7 @@ class FeedCard extends StatelessWidget {
             }
           }
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -966,7 +957,7 @@ class FeedCard extends StatelessWidget {
               children: [
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(12),
+                    top: Radius.circular(16),
                   ),
                   child: CachedNetworkImage(
                     imageUrl: thumbnail,
@@ -1076,7 +1067,7 @@ class FeedCard extends StatelessWidget {
             _handleCommonCardTap(url);
           }
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

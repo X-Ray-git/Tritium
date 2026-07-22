@@ -2,10 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tritium/pages/main/main_controller.dart';
 
 void main() {
-  test('main controller switches tabs and reselects content to scroll up', () {
+  test('main controller switches tabs and reselects a feed to scroll up', () {
     final controller = MainController();
     var scrollRequests = 0;
-    controller.scrollToTopCallback = () => scrollRequests++;
+    controller.registerScrollToTop(0, () => scrollRequests++);
 
     controller.changeIndex(1);
     expect(controller.currentIndex.value, 1);

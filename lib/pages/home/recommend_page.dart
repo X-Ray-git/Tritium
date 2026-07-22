@@ -10,6 +10,7 @@ import '../../common/widgets/empty_widget.dart';
 import '../widgets/feed_card.dart';
 import '../main/main_controller.dart'; // For scroll-to-top callback
 import '../../services/preload_service.dart';
+import '../../common/widgets/tritium_refresh_indicator.dart';
 
 /// 推荐页控制器
 class RecommendController extends GetxController {
@@ -137,7 +138,7 @@ class _RecommendPageState extends State<RecommendPage> {
     // 注册滚动到顶部回调
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final mainController = Get.find<MainController>();
-      mainController.scrollToTopCallback = _scrollToTop;
+      mainController.registerScrollToTop(0, _scrollToTop);
     });
   }
 
@@ -147,9 +148,7 @@ class _RecommendPageState extends State<RecommendPage> {
     _scrollController.dispose();
     // 清理回调
     final mainController = Get.find<MainController>();
-    if (mainController.scrollToTopCallback == _scrollToTop) {
-      mainController.scrollToTopCallback = null;
-    }
+    mainController.unregisterScrollToTop(0, _scrollToTop);
     super.dispose();
   }
 
@@ -194,12 +193,12 @@ class _RecommendPageState extends State<RecommendPage> {
         );
       }
 
-      return RefreshIndicator(
+      return TritiumRefreshIndicator(
         onRefresh: () => controller.loadData(forceNetwork: true),
         child: ListView.builder(
           controller: _scrollController,
           padding: EdgeInsets.only(
-            top: 8,
+            top: MediaQuery.paddingOf(context).top,
             bottom: 88 + MediaQuery.paddingOf(context).bottom,
           ),
           addAutomaticKeepAlives: false,

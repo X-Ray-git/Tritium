@@ -8,6 +8,8 @@ import '../../common/widgets/error_widget.dart' as custom;
 import '../../common/widgets/empty_widget.dart';
 import '../widgets/hot_card.dart';
 import '../../services/preload_service.dart';
+import '../../common/widgets/tritium_refresh_indicator.dart';
+import '../main/main_controller.dart';
 
 /// 热榜页控制器
 class HotController extends GetxController {
@@ -78,13 +80,46 @@ class HotController extends GetxController {
 }
 
 /// 热榜页
-class HotPage extends StatelessWidget {
+class HotPage extends StatefulWidget {
   const HotPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final controller = Get.put(HotController());
+  State<HotPage> createState() => _HotPageState();
+}
 
+class _HotPageState extends State<HotPage> {
+  late final HotController controller;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    controller = Get.put(HotController());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Get.find<MainController>().registerScrollToTop(1, _scrollToTop);
+    });
+  }
+
+  @override
+  void dispose() {
+    Get.find<MainController>().unregisterScrollToTop(1, _scrollToTop);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Obx(() {
       final state = controller.loadingState.value;
 
@@ -107,13 +142,14 @@ class HotPage extends StatelessWidget {
         );
       }
 
-      return RefreshIndicator(
+      return TritiumRefreshIndicator(
         onRefresh: controller.loadData,
         child: ListView.builder(
+          controller: _scrollController,
           // 增加底部 Padding 以防止被毛玻璃底栏遮挡
           // kBottomNavigationBarHeight (56) + 额外间距
           padding: EdgeInsets.only(
-            top: 8,
+            top: MediaQuery.paddingOf(context).top,
             bottom: 88 + MediaQuery.paddingOf(context).bottom,
           ),
           itemCount: controller.hotList.length,

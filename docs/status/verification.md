@@ -22,3 +22,11 @@
   `C677B8C96FE220664BBA662E0ED7F645691C027167997261C1ABFD6E34DC43A3`，与 Auto Folo
   本地 keystore 证书一致。
 - 本次为 `workflow_dispatch` 内部构建，没有创建 tag 或 GitHub Release。
+
+## 2026-07-22：阅读交互与刷新验收
+
+- `dart analyze`：通过，无诊断。
+- `flutter test`：22 项通过，覆盖回答横滑、HTML 分块、评论预加载、图片缩放平移、
+  下拉刷新状态机及 AppBar 边界。
+- `flutter build apk --debug`：通过。
+- 真机确认下拉刷新反悔时圆环能够沿 Auto Folo 的路径回到 AppBar 边界，问题已解决。

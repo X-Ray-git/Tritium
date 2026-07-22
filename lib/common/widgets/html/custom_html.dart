@@ -13,6 +13,7 @@ class CustomHtml extends StatelessWidget {
   final ColorScheme? colorScheme;
   final double fontSize;
   final EdgeInsetsGeometry? padding;
+  final List<String> imageUrls;
 
   const CustomHtml({
     super.key,
@@ -20,6 +21,7 @@ class CustomHtml extends StatelessWidget {
     this.colorScheme,
     this.fontSize = 16.0,
     this.padding,
+    this.imageUrls = const [],
   });
 
   static const _emojiMap = {
@@ -170,13 +172,6 @@ class CustomHtml extends StatelessWidget {
               final altTex = attributes['alt'];
 
               if (isEquation && altTex != null && altTex.isNotEmpty) {
-                // ... equation logic (skipped for brevity)
-                // Keeping existing equation logic here if I were editing the whole block,
-                // but since I'm targeting a chunk, I'll copy the equation logic back in or ensure it's not lost.
-                // Actually, replace_file_content replaces the whole chunk.
-                // So I need to include the FULL content of the chunk including my previous equation fix.
-
-                // Render as Math instead of Image
                 String tex = altTex
                     .replaceAll('&amp;', '&')
                     .replaceAll('&lt;', '<')
@@ -199,7 +194,6 @@ class CustomHtml extends StatelessWidget {
 
               if (url == null || url.isEmpty) return const SizedBox();
 
-              // Handle Emoji specifically
               if (isEmoji) {
                 return CachedNetworkImage(
                   imageUrl: url,
@@ -218,24 +212,15 @@ class CustomHtml extends StatelessWidget {
                 return const SizedBox();
               }
 
-              return GestureDetector(
-                onTap: () {
-                  ImageViewer.show(context, url!);
-                },
-                child: CachedNetworkImage(
-                  imageUrl: url,
-                  httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
-                  fadeInDuration: const Duration(milliseconds: 200), // 平滑淡入
-                  fadeOutDuration: const Duration(milliseconds: 100),
-                  placeholder: (context, url) => Container(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.3),
-                    constraints: const BoxConstraints(minHeight: 200),
-                  ), // 无加载圈，仅背景色
-                  errorWidget: (context, url, error) => const Icon(Icons.error),
-                  width: double.infinity,
-                  fit: BoxFit.contain,
-                ),
+              return _ArticleHtmlImage(
+                url: url,
+                imageUrls: imageUrls,
+                sourceWidth:
+                    _parseDimension(attributes['width']) ??
+                    _parseStyleDimension(attributes['style'], 'width'),
+                sourceHeight:
+                    _parseDimension(attributes['height']) ??
+                    _parseStyleDimension(attributes['style'], 'height'),
               );
             },
           ),
@@ -263,7 +248,8 @@ class CustomHtml extends StatelessWidget {
 
                 if (isImage) {
                   return GestureDetector(
-                    onTap: () => ImageViewer.show(context, href),
+                    onTap: () =>
+                        ImageViewer.show(context, href, imageUrls: imageUrls),
                     child: Container(
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       child: CachedNetworkImage(
@@ -299,7 +285,7 @@ class CustomHtml extends StatelessWidget {
                   text,
                   style: TextStyle(
                     color: ctx.style?.color ?? Colors.blue,
-                    decoration: TextDecoration.underline,
+                    decoration: TextDecoration.none,
                   ),
                 ),
               );
@@ -309,19 +295,38 @@ class CustomHtml extends StatelessWidget {
         style: {
           'body': Style(
             fontSize: FontSize(fontSize),
-            lineHeight: const LineHeight(1.6),
+            lineHeight: const LineHeight(1.7),
             margin: Margins.zero,
             padding: HtmlPaddings.zero,
             color: cs.onSurface,
           ),
-          'p': Style(margin: Margins.only(bottom: 16)),
+          'p': Style(margin: Margins.only(bottom: 14)),
+          'h1': Style(
+            fontSize: FontSize(22),
+            fontWeight: FontWeight.w700,
+            lineHeight: const LineHeight(1.35),
+            margin: Margins.only(top: 24, bottom: 10),
+          ),
+          'h2': Style(
+            fontSize: FontSize(20),
+            fontWeight: FontWeight.w700,
+            lineHeight: const LineHeight(1.4),
+            margin: Margins.only(top: 22, bottom: 8),
+          ),
+          'h3': Style(
+            fontSize: FontSize(18),
+            fontWeight: FontWeight.w600,
+            lineHeight: const LineHeight(1.45),
+            margin: Margins.only(top: 20, bottom: 8),
+          ),
           'noscript': Style(display: Display.none),
           'a': Style(color: cs.primary, textDecoration: TextDecoration.none),
           'blockquote': Style(
-            padding: HtmlPaddings.only(left: 12),
+            padding: HtmlPaddings.symmetric(horizontal: 12, vertical: 8),
             border: Border(left: BorderSide(color: cs.primary, width: 3)),
             margin: Margins.symmetric(vertical: 12),
             color: cs.onSurfaceVariant,
+            backgroundColor: cs.primaryContainer.withValues(alpha: 0.22),
           ),
           'code': Style(
             backgroundColor: cs.surfaceContainerHighest,
@@ -344,6 +349,134 @@ class CustomHtml extends StatelessWidget {
           ),
         },
       ),
+    );
+  }
+
+  static double? _parseDimension(String? value) {
+    if (value == null) return null;
+    return double.tryParse(value.replaceAll(RegExp(r'[^0-9.]'), ''));
+  }
+
+  static double? _parseStyleDimension(String? style, String property) {
+    if (style == null || style.isEmpty) return null;
+    final match = RegExp(
+      '(?:max-$property|$property)\\s*:\\s*(\\d+(?:\\.\\d+)?)\\s*px',
+      caseSensitive: false,
+    ).firstMatch(style);
+    return match == null ? null : double.tryParse(match.group(1)!);
+  }
+}
+
+class _ArticleHtmlImage extends StatefulWidget {
+  final String url;
+  final List<String> imageUrls;
+  final double? sourceWidth;
+  final double? sourceHeight;
+
+  const _ArticleHtmlImage({
+    required this.url,
+    required this.imageUrls,
+    this.sourceWidth,
+    this.sourceHeight,
+  });
+
+  @override
+  State<_ArticleHtmlImage> createState() => _ArticleHtmlImageState();
+}
+
+class _ArticleHtmlImageState extends State<_ArticleHtmlImage> {
+  int _retryCount = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final displayWidth = widget.sourceWidth == null
+            ? availableWidth
+            : widget.sourceWidth!.clamp(1.0, availableWidth);
+        final ratio =
+            widget.sourceWidth != null &&
+                widget.sourceHeight != null &&
+                widget.sourceWidth! > 0 &&
+                widget.sourceHeight! > 0
+            ? widget.sourceHeight! / widget.sourceWidth!
+            : null;
+        final maxStableHeight = (displayWidth * 3).clamp(420.0, 1400.0);
+        final placeholderHeight = ratio == null
+            ? (displayWidth * 0.6).clamp(180.0, 420.0)
+            : (displayWidth * ratio).clamp(1.0, maxStableHeight);
+        final cacheWidth =
+            (displayWidth * MediaQuery.devicePixelRatioOf(context))
+                .round()
+                .clamp(1, 4096);
+
+        return Align(
+          alignment: Alignment.center,
+          child: GestureDetector(
+            onTap: () => ImageViewer.show(
+              context,
+              widget.url,
+              imageUrls: widget.imageUrls,
+            ),
+            child: Hero(
+              tag: widget.url,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CachedNetworkImage(
+                  key: ValueKey(_retryCount),
+                  imageUrl: widget.url,
+                  width: displayWidth,
+                  fit: BoxFit.contain,
+                  memCacheWidth: cacheWidth,
+                  maxWidthDiskCache: cacheWidth * 2,
+                  httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
+                  fadeInDuration: const Duration(milliseconds: 250),
+                  fadeOutDuration: const Duration(milliseconds: 80),
+                  placeholder: (context, url) => SizedBox(
+                    width: displayWidth,
+                    height: placeholderHeight,
+                    child: const Center(
+                      child: SizedBox.square(
+                        dimension: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  ),
+                  errorWidget: (context, url, error) => SizedBox(
+                    width: displayWidth,
+                    height: placeholderHeight,
+                    child: ColoredBox(
+                      color: colors.surfaceContainerHighest.withValues(
+                        alpha: 0.22,
+                      ),
+                      child: Center(
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            await CachedNetworkImage.evictFromCache(widget.url);
+                            if (mounted) setState(() => _retryCount++);
+                          },
+                          icon: Icon(
+                            Icons.refresh_rounded,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          label: Text(
+                            '重新加载',
+                            style: TextStyle(color: colors.onSurfaceVariant),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

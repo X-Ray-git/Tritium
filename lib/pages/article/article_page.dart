@@ -7,9 +7,13 @@ import '../../http/init.dart';
 import '../../common/widgets/loading_widget.dart';
 import '../../common/widgets/error_widget.dart' as custom;
 import '../../common/widgets/blur_container.dart';
+import '../../common/widgets/app_chrome.dart';
+import '../../common/widgets/tritium_refresh_indicator.dart';
 
-import '../../common/widgets/html/custom_html.dart';
+import '../../common/widgets/html/chunked_html_sliver.dart';
+import '../../common/widgets/html/html_chunker.dart';
 import '../../common/widgets/inline_comment_widget.dart';
+import '../../common/widgets/image_viewer.dart';
 
 /// 专栏文章页
 class ArticlePage extends StatefulWidget {
@@ -26,6 +30,10 @@ class _ArticlePageState extends State<ArticlePage> {
   Map<String, dynamic>? _articleData;
   String? _articleId;
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey _commentsKey = GlobalKey();
+  bool _contentReady = false;
+  bool _pendingCommentScroll = false;
+  List<String> _imageUrls = const [];
   int _loadGeneration = 0;
 
   @override
@@ -44,6 +52,7 @@ class _ArticlePageState extends State<ArticlePage> {
     // 同步检查缓存，确保首帧渲染
     if (_articleId != null && ArticleHttp.cache.containsKey(_articleId)) {
       _articleData = ArticleHttp.cache[_articleId];
+      _imageUrls = _collectImageUrls(_articleData!);
       _loadingState.value = Success(_articleData!);
     } else {
       _loadData();
@@ -67,7 +76,12 @@ class _ArticlePageState extends State<ArticlePage> {
     if (!mounted || generation != _loadGeneration) return;
 
     if (result is Success<Map<String, dynamic>>) {
+      final previousContent =
+          _articleData?['content'] ?? _articleData?['detail'];
       _articleData = result.response;
+      _imageUrls = _collectImageUrls(_articleData!);
+      final nextContent = _articleData?['content'] ?? _articleData?['detail'];
+      if (previousContent != nextContent) _contentReady = false;
       _loadingState.value = result;
     } else if (result is Error) {
       _loadingState.value = Error((result as Error).errMsg);
@@ -84,14 +98,14 @@ class _ArticlePageState extends State<ArticlePage> {
 
         if (state is Loading) {
           return Scaffold(
-            appBar: AppBar(title: const Text('专栏文章')),
+            appBar: const TritiumBlurAppBar(title: TritiumSectionTitle('专栏文章')),
             body: const LoadingWidget(msg: '加载中...'),
           );
         }
 
         if (state is Error) {
           return Scaffold(
-            appBar: AppBar(title: const Text('专栏文章')),
+            appBar: const TritiumBlurAppBar(title: TritiumSectionTitle('专栏文章')),
             body: custom.ErrorWidget(
               message: (state as Error).errMsg,
               onRetry: _loadData,
@@ -124,45 +138,73 @@ class _ArticlePageState extends State<ArticlePage> {
         final heroTag = arguments?['heroTag'];
 
         Widget scaffoldContent = Scaffold(
-          body: RefreshIndicator(
+          body: TritiumRefreshIndicator(
             onRefresh: _loadData,
             child: CustomScrollView(
               controller: _scrollController,
               slivers: [
                 // AppBar
-                SliverAppBar(
-                  floating: true,
-                  snap: true,
-                  title: const Text('专栏文章'),
-                ),
+                const TritiumSliverAppBar(title: TritiumSectionTitle('专栏文章')),
                 // 封面图
                 if (imageUrl.isNotEmpty)
                   SliverToBoxAdapter(
-                    child: CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      width: double.infinity,
-                      height: 200,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        height: 200,
-                        color: colorScheme.surfaceContainerHighest,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(11, 8, 11, 0),
+                      child: GestureDetector(
+                        onTap: () => ImageViewer.show(
+                          context,
+                          imageUrl,
+                          imageUrls: _imageUrls,
+                        ),
+                        child: Hero(
+                          tag: imageUrl,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: AspectRatio(
+                              aspectRatio: 5 / 3,
+                              child: CachedNetworkImage(
+                                imageUrl: imageUrl,
+                                fit: BoxFit.contain,
+                                fadeInDuration: const Duration(
+                                  milliseconds: 80,
+                                ),
+                                fadeOutDuration: const Duration(
+                                  milliseconds: 80,
+                                ),
+                                placeholder: (context, url) => ColoredBox(
+                                  color: colorScheme.surfaceContainerHighest
+                                      .withValues(alpha: 0.35),
+                                ),
+                                httpHeaders: const {
+                                  'Referer': 'https://www.zhihu.com/',
+                                },
+                                errorWidget: (context, url, error) =>
+                                    ColoredBox(
+                                      color: colorScheme.surfaceContainerHighest
+                                          .withValues(alpha: 0.2),
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
-                      errorWidget: (context, url, error) =>
-                          const SizedBox.shrink(),
                     ),
                   ),
                 // 标题
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(11, 16, 11, 12),
                     child: Text(
                       title,
                       style: TextStyle(
-                        fontSize: 24,
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
                         color: colorScheme.onSurface,
-                        height: 1.4,
+                        height: 1.35,
                       ),
                     ),
                   ),
@@ -171,7 +213,7 @@ class _ArticlePageState extends State<ArticlePage> {
                 SliverToBoxAdapter(
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
+                      horizontal: 11,
                       vertical: 12,
                     ),
                     decoration: BoxDecoration(
@@ -232,27 +274,34 @@ class _ArticlePageState extends State<ArticlePage> {
                   ),
                 ),
                 // 文章内容
-                SliverToBoxAdapter(
-                  child: CustomHtml(
-                    content: content,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 8,
-                    ),
-                    fontSize: 17,
+                ChunkedHtmlSliver(
+                  key: ValueKey(content.hashCode),
+                  content: content,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 8,
                   ),
+                  fontSize: 17,
+                  imageUrls: _imageUrls,
+                  onReady: () {
+                    _contentReady = true;
+                    if (_pendingCommentScroll) _scrollToComments();
+                  },
                 ),
                 // 底部间距
                 // 评论区
-                SliverToBoxAdapter(
-                  child: _articleId != null
-                      ? InlineCommentWidget(
-                          resourceId: _articleId!,
-                          resourceType: 'articles',
-                          showHeader: true,
-                        )
-                      : const SizedBox.shrink(),
-                ),
+                SliverToBoxAdapter(child: SizedBox(key: _commentsKey)),
+                if (_articleId != null)
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => InlineCommentWidget(
+                        resourceId: _articleId!,
+                        resourceType: 'articles',
+                        showHeader: true,
+                      ),
+                      childCount: 1,
+                    ),
+                  ),
 
                 // 底部间距
                 const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -277,16 +326,7 @@ class _ArticlePageState extends State<ArticlePage> {
                 _ActionButton(
                   icon: Icons.chat_bubble_outline,
                   label: _formatCount(commentCount),
-                  onTap: () {
-                    // 滚动到底部查看评论
-                    if (_scrollController.hasClients) {
-                      _scrollController.animateTo(
-                        _scrollController.position.maxScrollExtent,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOut,
-                      );
-                    }
-                  },
+                  onTap: _scrollToComments,
                 ),
               ],
             ),
@@ -300,6 +340,35 @@ class _ArticlePageState extends State<ArticlePage> {
         return scaffoldContent;
       }),
     );
+  }
+
+  void _scrollToComments() {
+    if (!_contentReady) {
+      _pendingCommentScroll = true;
+      return;
+    }
+    final commentsContext = _commentsKey.currentContext;
+    if (commentsContext == null) return;
+    _pendingCommentScroll = false;
+    Scrollable.ensureVisible(
+      commentsContext,
+      alignment: 0.02,
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  List<String> _collectImageUrls(Map<String, dynamic> data) {
+    final urls = <String>[];
+    final cover = data['image_url']?.toString();
+    if (cover != null && cover.isNotEmpty) urls.add(cover);
+    final rawContent = data['content'] ?? data['detail'];
+    if (rawContent is String) {
+      for (final url in HtmlChunker.extractImageUrls(rawContent)) {
+        if (!urls.contains(url)) urls.add(url);
+      }
+    }
+    return List.unmodifiable(urls);
   }
 
   String _formatCount(dynamic count) {

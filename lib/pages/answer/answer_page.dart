@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
@@ -8,10 +9,12 @@ import '../../http/init.dart';
 import '../../common/widgets/loading_widget.dart';
 import '../../common/widgets/error_widget.dart' as custom;
 import '../../router/app_pages.dart';
-import '../../common/widgets/html/custom_html.dart';
+import '../../common/widgets/html/chunked_html_sliver.dart';
+import '../../common/widgets/html/html_chunker.dart';
 import '../../utils/storage.dart';
 import '../../common/widgets/inline_comment_widget.dart';
 import '../../common/widgets/blur_container.dart';
+import '../../utils/comment_preload.dart';
 
 /// 回答详情页 (容器)
 class AnswerPage extends StatefulWidget {
@@ -38,16 +41,20 @@ class _AnswerPageState extends State<AnswerPage> {
 
   // 回答列表状态
   List<String> _answerIds = [];
-  // late PageController _pageController; // Removed
+  late final PageController _pageController;
+  final Map<String, GlobalKey> _commentKeys = {};
+  final Set<String> _contentReadyAnswerIds = {};
+  String? _pendingCommentAnswerId;
 
   int _currentIndex = 0;
-
-  // 滑动方向：true = 从右侧滑入 (Next), false = 从左侧滑入 (Prev)
-  bool _slideFromRight = true;
+  bool _hasPendingPageTransition = false;
 
   // AppBar 标题可见性（当内容区域的标题滚出视图时显示）
-  // bool _showTitleInAppBar = false; // 已废弃，改用 notifier
   final ValueNotifier<bool> _showTitleNotifier = ValueNotifier(false);
+  late final ValueNotifier<String> _questionTitleNotifier;
+  late final ValueNotifier<dynamic> _voteupCountNotifier;
+  late final ValueNotifier<dynamic> _commentCountNotifier;
+  late final ValueNotifier<int> _settledPageIndexNotifier;
 
   // 滚动控制器
   final ScrollController _scrollController = ScrollController();
@@ -85,8 +92,13 @@ class _AnswerPageState extends State<AnswerPage> {
     } else if (_answerIds.isNotEmpty) {
       _currentIndex = widget.initialIndex.clamp(0, _answerIds.length - 1);
     }
+    _pageController = PageController(initialPage: _currentIndex);
+    _questionTitleNotifier = ValueNotifier('回答详情');
+    _voteupCountNotifier = ValueNotifier(0);
+    _commentCountNotifier = ValueNotifier(0);
+    _settledPageIndexNotifier = ValueNotifier(_currentIndex);
+    _syncChromeForCurrentAnswer();
 
-    // 监听滚动
     // 监听滚动
     _scrollController.addListener(_onScroll);
 
@@ -106,7 +118,12 @@ class _AnswerPageState extends State<AnswerPage> {
     _loadGeneration++;
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _pageController.dispose();
     _showTitleNotifier.dispose();
+    _questionTitleNotifier.dispose();
+    _voteupCountNotifier.dispose();
+    _commentCountNotifier.dispose();
+    _settledPageIndexNotifier.dispose();
     super.dispose();
   }
 
@@ -154,10 +171,6 @@ class _AnswerPageState extends State<AnswerPage> {
             if (currentId != null) {
               final newIndex = _answerIds.indexOf(currentId);
               _currentIndex = newIndex >= 0 ? newIndex : 0;
-              // 修正位置
-              // if (_pageController.hasClients) {
-              //   _pageController.jumpToPage(_currentIndex);
-              // }
             }
             // 预加载
             _preloadNeighbors(_currentIndex);
@@ -166,27 +179,75 @@ class _AnswerPageState extends State<AnswerPage> {
               AnswerHttp.preload(_answerIds.first);
             }
           });
+          _syncChromeForCurrentAnswer();
+          _settledPageIndexNotifier.value = _currentIndex;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _pageController.hasClients) {
+              _pageController.jumpToPage(_currentIndex);
+            }
+          });
         }
       }
     }
   }
 
-  // void _onPageChanged(int index) { ... } // Removed
-
-  // void _preloadNeighbors(int index) ... (Keep this)
-
   void _preloadNeighbors(int index) {
     if (_answerIds.isEmpty) return;
 
-    // Preload next
     if (index + 1 < _answerIds.length) {
-      AnswerHttp.preload(_answerIds[index + 1]);
+      _preloadAnswer(_answerIds[index + 1]);
     }
-    // Preload prev
     if (index - 1 >= 0) {
-      AnswerHttp.preload(_answerIds[index - 1]);
+      _preloadAnswer(_answerIds[index - 1]);
     }
-    // Preload next+1 (aggressive) ? Maybe just 1 is enough.
+  }
+
+  void _preloadAnswer(String answerId) {
+    final cached = AnswerHttp.cache[answerId];
+    if (cached != null) {
+      final content = cached['content'] ?? cached['detail'];
+      if (content is String) HtmlChunker.preload(content);
+      return;
+    }
+    AnswerHttp.getAnswer(answerId).then((result) {
+      if (result is! Success<Map<String, dynamic>>) return;
+      final content = result.response['content'] ?? result.response['detail'];
+      if (content is String) HtmlChunker.preload(content);
+    });
+  }
+
+  void _onPageChanged(int index) {
+    if (index == _currentIndex) return;
+    _currentIndex = index;
+    _hasPendingPageTransition = true;
+    if (Pref.enableSwipeHaptics) HapticFeedback.selectionClick();
+  }
+
+  bool _handlePageScrollEnd(ScrollEndNotification notification) {
+    if (notification.metrics.axis != Axis.horizontal ||
+        !_hasPendingPageTransition) {
+      return false;
+    }
+    _hasPendingPageTransition = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncChromeForCurrentAnswer();
+      _settledPageIndexNotifier.value = _currentIndex;
+      _showTitleNotifier.value = false;
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+      _preloadNeighbors(_currentIndex);
+    });
+    return false;
+  }
+
+  void _syncChromeForCurrentAnswer([Map<String, dynamic>? loadedData]) {
+    if (_answerIds.isEmpty) return;
+    final answerId = _answerIds[_currentIndex];
+    final data = loadedData ?? AnswerHttp.cache[answerId];
+    _questionTitleNotifier.value =
+        data?['question']?['title']?.toString() ?? '回答详情';
+    _voteupCountNotifier.value = data?['voteup_count'] ?? 0;
+    _commentCountNotifier.value = data?['comment_count'] ?? 0;
   }
 
   @override
@@ -194,18 +255,6 @@ class _AnswerPageState extends State<AnswerPage> {
     if (_answerIds.isEmpty) {
       return const Scaffold(body: LoadingWidget(msg: '加载中...'));
     }
-
-    // 获取当前回答数据 (从缓存)
-    // 获取当前回答数据 (从缓存)
-    final currentId = _answerIds.isNotEmpty ? _answerIds[_currentIndex] : null;
-    final currentData =
-        (currentId != null && AnswerHttp.cache.containsKey(currentId))
-        ? AnswerHttp.cache[currentId]
-        : null;
-
-    final questionTitle = currentData?['question']?['title'] ?? '回答详情';
-    final voteupCount = currentData?['voteup_count'] ?? 0;
-    final commentCount = currentData?['comment_count'] ?? 0;
 
     return Scaffold(
       body: NestedScrollView(
@@ -220,24 +269,26 @@ class _AnswerPageState extends State<AnswerPage> {
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => Navigator.of(context).pop(),
               ),
-              title: ValueListenableBuilder<bool>(
-                valueListenable: _showTitleNotifier,
-                builder: (context, show, child) {
-                  return AnimatedOpacity(
-                    duration: const Duration(milliseconds: 200),
-                    opacity: show ? 1.0 : 0.0,
-                    child: Text(
-                      questionTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
+              title: ValueListenableBuilder<String>(
+                valueListenable: _questionTitleNotifier,
+                builder: (context, questionTitle, child) =>
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _showTitleNotifier,
+                      builder: (context, show, child) => AnimatedOpacity(
+                        duration: const Duration(milliseconds: 200),
+                        opacity: show ? 1.0 : 0.0,
+                        child: Text(
+                          questionTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
                       ),
                     ),
-                  );
-                },
               ),
             ),
             SliverToBoxAdapter(
@@ -252,13 +303,16 @@ class _AnswerPageState extends State<AnswerPage> {
                 },
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: Text(
-                    questionTitle,
-                    style: TextStyle(
-                      fontSize: 20, // 大标题
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface,
-                      height: 1.3,
+                  child: ValueListenableBuilder<String>(
+                    valueListenable: _questionTitleNotifier,
+                    builder: (context, questionTitle, child) => Text(
+                      questionTitle,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                        height: 1.3,
+                      ),
                     ),
                   ),
                 ),
@@ -266,119 +320,49 @@ class _AnswerPageState extends State<AnswerPage> {
             ),
           ];
         },
-        body: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragEnd: (details) {
-            final velocity = details.primaryVelocity;
-            if (velocity == null || velocity.abs() < 80) return;
-            if (velocity < 0) {
-              // Swipe Left -> Next
-              if (_currentIndex < _answerIds.length - 1) {
-                // 触发振动反馈
-                if (Pref.enableSwipeHaptics) {
-                  HapticFeedback.mediumImpact();
-                }
-                setState(() {
-                  _slideFromRight = true;
-                  _currentIndex++;
-                  // _showTitleInAppBar = false; // 已移除
-                  _updateCurrentData();
-                });
-                // 切换内容后，重置滚动位置到顶部
-                if (_scrollController.hasClients) {
-                  _scrollController.jumpTo(0);
-                }
-                _preloadNeighbors(_currentIndex);
-              } else {
-                Get.snackbar(
-                  '提示',
-                  '已经是最后一条回答了',
-                  snackPosition: SnackPosition.BOTTOM,
-                  duration: const Duration(seconds: 1),
-                );
-              }
-            } else if (velocity > 0) {
-              // Swipe Right -> Prev
-              if (_currentIndex > 0) {
-                // 触发振动反馈
-                if (Pref.enableSwipeHaptics) {
-                  HapticFeedback.mediumImpact();
-                }
-                setState(() {
-                  _slideFromRight = false;
-                  _currentIndex--;
-                  // _showTitleInAppBar = false; // 已移除
-                  _updateCurrentData();
-                });
-                // 切换内容后，重置滚动位置到顶部
-                if (_scrollController.hasClients) {
-                  _scrollController.jumpTo(0);
-                }
-                _preloadNeighbors(_currentIndex);
-              } else {
-                Get.snackbar(
-                  '提示',
-                  '已经是第一条回答了',
-                  snackPosition: SnackPosition.BOTTOM,
-                  duration: const Duration(seconds: 1),
-                );
-              }
-            }
-          },
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            switchInCurve: Curves.fastOutSlowIn,
-            switchOutCurve: Curves.fastOutSlowIn,
-            transitionBuilder: (Widget child, Animation<double> animation) {
-              final childKey = child.key as ValueKey?;
-              final isEntering = childKey?.value == currentId;
-
-              Offset beginOffset;
-              if (_slideFromRight) {
-                beginOffset = isEntering
-                    ? const Offset(1.0, 0)
-                    : const Offset(-1.0, 0);
-              } else {
-                beginOffset = isEntering
-                    ? const Offset(-1.0, 0)
-                    : const Offset(1.0, 0);
-              }
-
-              return SlideTransition(
-                position: Tween<Offset>(
-                  begin: beginOffset,
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
+        body: NotificationListener<ScrollEndNotification>(
+          onNotification: _handlePageScrollEnd,
+          child: PageView.builder(
+            controller: _pageController,
+            allowImplicitScrolling: true,
+            itemCount: _answerIds.length,
+            onPageChanged: _onPageChanged,
+            itemBuilder: (context, index) {
+              final answerId = _answerIds[index];
+              final commentKey = _commentKeys.putIfAbsent(
+                answerId,
+                GlobalKey.new,
+              );
+              return _AnswerSinglePage(
+                key: ValueKey(answerId),
+                answerId: answerId,
+                questionId: _questionId,
+                commentsKey: commentKey,
+                pageIndex: index,
+                settledPageIndexListenable: _settledPageIndexNotifier,
+                initialData: AnswerHttp.cache.containsKey(answerId)
+                    ? AnswerHttp.cache[answerId]
+                    : null,
+                onQuestionIdLoaded: (qId) {
+                  if (_questionId == null && qId.isNotEmpty) {
+                    _questionId = qId;
+                    _fetchQuestionAnswers();
+                  }
+                },
+                onDataLoaded: (data) {
+                  if (!_hasPendingPageTransition &&
+                      _answerIds[_currentIndex] == answerId) {
+                    _syncChromeForCurrentAnswer(data);
+                  }
+                },
+                onContentReady: () {
+                  _contentReadyAnswerIds.add(answerId);
+                  if (_pendingCommentAnswerId == answerId) {
+                    _scrollToComments(answerId);
+                  }
+                },
               );
             },
-            layoutBuilder:
-                (Widget? currentChild, List<Widget> previousChildren) {
-                  return Stack(
-                    children: <Widget>[...previousChildren, ?currentChild],
-                  );
-                },
-            child: currentId == null
-                ? const LoadingWidget(msg: '加载中...')
-                : _AnswerSinglePage(
-                    key: ValueKey(currentId),
-                    answerId: currentId,
-                    questionId: _questionId,
-                    initialData: AnswerHttp.cache.containsKey(currentId)
-                        ? AnswerHttp.cache[currentId]
-                        : null,
-                    onQuestionIdLoaded: (qId) {
-                      if (_questionId == null && qId.isNotEmpty) {
-                        _questionId = qId;
-                        _fetchQuestionAnswers();
-                      }
-                    },
-                    onDataLoaded: () {
-                      // 强制刷新 ScrollController 状态（有时 AnimatedSwitcher 会导致 PrimaryScrollController 丢失连接）
-                      if (mounted) setState(() {});
-                    },
-                    // onTitleVisibilityChanged 已移除，由 parent 直接监听 NestedScrollView controller
-                  ),
           ),
         ),
       ),
@@ -391,23 +375,21 @@ class _AnswerPageState extends State<AnswerPage> {
         ),
         child: Row(
           children: [
-            _ActionButton(
-              icon: Icons.thumb_up_outlined,
-              label: _formatCount(voteupCount),
+            ValueListenableBuilder<dynamic>(
+              valueListenable: _voteupCountNotifier,
+              builder: (context, count, child) => _ActionButton(
+                icon: Icons.thumb_up_outlined,
+                label: _formatCount(count),
+              ),
             ),
             const SizedBox(width: 16),
-            _ActionButton(
-              icon: Icons.chat_bubble_outline_rounded,
-              label: _formatCount(commentCount),
-              onTap: () {
-                if (_scrollController.hasClients) {
-                  _scrollController.animateTo(
-                    _scrollController.position.maxScrollExtent,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
-                  );
-                }
-              },
+            ValueListenableBuilder<dynamic>(
+              valueListenable: _commentCountNotifier,
+              builder: (context, count, child) => _ActionButton(
+                icon: Icons.chat_bubble_outline_rounded,
+                label: _formatCount(count),
+                onTap: () => _scrollToComments(_answerIds[_currentIndex]),
+              ),
             ),
           ],
         ),
@@ -415,9 +397,20 @@ class _AnswerPageState extends State<AnswerPage> {
     );
   }
 
-  // 辅助方法：触发数据更新（其实 setState 已经够了，但为了清晰）
-  void _updateCurrentData() {
-    // 逻辑在 build 中通过 _currentIndex 获取 currentData
+  void _scrollToComments(String answerId) {
+    if (!_contentReadyAnswerIds.contains(answerId)) {
+      _pendingCommentAnswerId = answerId;
+      return;
+    }
+    final commentsContext = _commentKeys[answerId]?.currentContext;
+    if (commentsContext == null) return;
+    _pendingCommentAnswerId = null;
+    Scrollable.ensureVisible(
+      commentsContext,
+      alignment: 0.02,
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   String _formatCount(dynamic count) {
@@ -439,7 +432,11 @@ class _AnswerSinglePage extends StatefulWidget {
   final String? questionId;
   final Map<String, dynamic>? initialData;
   final ValueChanged<String>? onQuestionIdLoaded;
-  final VoidCallback? onDataLoaded;
+  final ValueChanged<Map<String, dynamic>>? onDataLoaded;
+  final GlobalKey commentsKey;
+  final VoidCallback? onContentReady;
+  final int pageIndex;
+  final ValueListenable<int> settledPageIndexListenable;
 
   const _AnswerSinglePage({
     super.key,
@@ -448,6 +445,10 @@ class _AnswerSinglePage extends StatefulWidget {
     this.initialData,
     this.onQuestionIdLoaded,
     this.onDataLoaded,
+    required this.commentsKey,
+    this.onContentReady,
+    required this.pageIndex,
+    required this.settledPageIndexListenable,
   });
 
   @override
@@ -462,6 +463,10 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
 
   // 延迟渲染标记
   bool _renderContent = false;
+  bool _contentLayoutReady = false;
+  bool _showComments = false;
+  ScrollMetrics? _lastScrollMetrics;
+  List<String> _imageUrls = const [];
   int _loadGeneration = 0;
 
   @override
@@ -471,12 +476,16 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
   void initState() {
     super.initState();
     _currentQuestionId = widget.questionId;
+    widget.settledPageIndexListenable.addListener(_onSettledPageChanged);
 
     // 设置滚动监听
     // _scrollController 移除，交由 NestedScrollView 管理
 
     if (widget.initialData != null) {
       _answerData = widget.initialData;
+      _imageUrls = HtmlChunker.extractImageUrls(
+        (_answerData!['content'] ?? _answerData!['detail'] ?? '').toString(),
+      );
       _loadingState.value = Success(widget.initialData!);
       _renderContent = true; // 数据已预加载，立即渲染（无需等待）
       // 写入缓存，以便 Parent 读取
@@ -489,20 +498,15 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
       // 检查缓存
       if (AnswerHttp.cache.containsKey(widget.answerId)) {
         _answerData = AnswerHttp.cache[widget.answerId];
+        _imageUrls = HtmlChunker.extractImageUrls(
+          (_answerData!['content'] ?? _answerData!['detail'] ?? '').toString(),
+        );
         _loadingState.value = Success(_answerData!);
         _renderContent = true; // 缓存命中，立即渲染
         // 触发 questionId 回调
         _triggerQuestionIdCallback();
       } else {
         _loadData();
-        // 仅在需要网络加载时延迟渲染（等待数据到达）
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (mounted && _answerData != null) {
-            setState(() {
-              _renderContent = true;
-            });
-          }
-        });
       }
     }
   }
@@ -527,7 +531,49 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
   @override
   void dispose() {
     _loadGeneration++;
+    widget.settledPageIndexListenable.removeListener(_onSettledPageChanged);
     super.dispose();
+  }
+
+  void _onSettledPageChanged() => _maybeShowComments();
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis == Axis.vertical) {
+      _lastScrollMetrics = notification.metrics;
+      _maybeShowComments();
+    }
+    return false;
+  }
+
+  void _handleContentReady() {
+    _contentLayoutReady = true;
+    widget.onContentReady?.call();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeShowComments();
+    });
+  }
+
+  void _maybeShowComments() {
+    if (!mounted ||
+        _showComments ||
+        !_contentLayoutReady ||
+        widget.settledPageIndexListenable.value != widget.pageIndex) {
+      return;
+    }
+    final anchorContext = widget.commentsKey.currentContext;
+    final anchorBox = anchorContext?.findRenderObject() as RenderBox?;
+    final metrics = _lastScrollMetrics;
+    final anchorTop = anchorBox != null && anchorBox.hasSize
+        ? anchorBox.localToGlobal(Offset.zero).dy
+        : null;
+    if (!shouldPreloadComments(
+      anchorTop: anchorTop,
+      viewportHeight: MediaQuery.sizeOf(context).height,
+      extentAfter: metrics?.extentAfter,
+    )) {
+      return;
+    }
+    setState(() => _showComments = true);
   }
 
   Future<void> _loadData() async {
@@ -539,12 +585,12 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
 
     if (result is Success<Map<String, dynamic>>) {
       _answerData = result.response;
+      _imageUrls = HtmlChunker.extractImageUrls(
+        (_answerData!['content'] ?? _answerData!['detail'] ?? '').toString(),
+      );
+      _renderContent = true;
+      // 最后更新响应式状态，只触发一次页面构建。
       _loadingState.value = result;
-
-      // 数据加载完成，允许渲染内容
-      setState(() {
-        _renderContent = true;
-      });
 
       // 尝试补全 QuestionId
       if (_currentQuestionId == null && _answerData!['question'] != null) {
@@ -556,7 +602,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
 
       // 通知 Parent 刷新 UI
       if (widget.onDataLoaded != null) {
-        widget.onDataLoaded!();
+        widget.onDataLoaded!(_answerData!);
       }
     } else if (result is Error) {
       _loadingState.value = Error((result as Error).errMsg);
@@ -609,113 +655,122 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
       }
 
       return RepaintBoundary(
-        child: CustomScrollView(
-          // controller: _scrollController, // 移除显式 Controller，使用 PrimaryScrollController
-          slivers: [
-            // 标题已移到父组件 NestedScrollView Header
-            // Author Info
-            SliverToBoxAdapter(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: CustomScrollView(
+            slivers: [
+              // 标题已移到父组件 NestedScrollView Header
+              // Author Info
+              SliverToBoxAdapter(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: colorScheme.outlineVariant.withValues(
+                          alpha: 0.3,
+                        ),
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundColor: colorScheme.primaryContainer,
+                        backgroundImage: authorAvatar.isNotEmpty
+                            ? CachedNetworkImageProvider(authorAvatar)
+                            : null,
+                        child: authorAvatar.isEmpty
+                            ? Icon(
+                                Icons.person,
+                                color: colorScheme.onPrimaryContainer,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              authorName,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.onSurface,
+                              ),
+                            ),
+                            if (authorHeadline.isNotEmpty ||
+                                authorIpLocation != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                [
+                                  if (authorHeadline.isNotEmpty) authorHeadline,
+                                  ?authorIpLocation,
+                                ].join(' · '),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
+              // 回答内容
+              if (_renderContent)
+                ChunkedHtmlSliver(
+                  key: ValueKey(content.hashCode),
+                  content: content.isNotEmpty ? content : '<p>$excerpt</p>',
+                  fontSize: 16,
+                  imageUrls: _imageUrls,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 8,
+                  ),
+                  onReady: _handleContentReady,
+                )
+              else
+                SliverToBoxAdapter(
+                  child: Container(
+                    height: 500,
+                    alignment: Alignment.topCenter,
+                    padding: const EdgeInsets.only(top: 100),
+                    child: const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   ),
                 ),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: colorScheme.primaryContainer,
-                      backgroundImage: authorAvatar.isNotEmpty
-                          ? CachedNetworkImageProvider(authorAvatar)
-                          : null,
-                      child: authorAvatar.isEmpty
-                          ? Icon(
-                              Icons.person,
-                              color: colorScheme.onPrimaryContainer,
-                            )
-                          : null,
+              // 评论区（嵌入在回答内容下方）
+              if (_renderContent && widget.answerId.isNotEmpty)
+                SliverToBoxAdapter(child: SizedBox(key: widget.commentsKey)),
+              if (_showComments && widget.answerId.isNotEmpty)
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => InlineCommentWidget(
+                      resourceId: widget.answerId,
+                      resourceType: 'answers',
+                      showHeader: true,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            authorName,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: colorScheme.onSurface,
-                            ),
-                          ),
-                          if (authorHeadline.isNotEmpty ||
-                              authorIpLocation != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              [
-                                if (authorHeadline.isNotEmpty) authorHeadline,
-                                ?authorIpLocation,
-                              ].join(' · '),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
+                    childCount: 1,
+                  ),
                 ),
-              ),
-            ),
-            // 回答内容
-            SliverToBoxAdapter(
-              child: _renderContent
-                  ? RepaintBoundary(
-                      child: CustomHtml(
-                        content: content.isNotEmpty
-                            ? content
-                            : '<p>$excerpt</p>',
-                        fontSize: 16,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 8,
-                        ),
-                      ),
-                    )
-                  : Container(
-                      height: 500,
-                      alignment: Alignment.topCenter,
-                      padding: const EdgeInsets.only(top: 100),
-                      child: const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-            ),
-            // 评论区（嵌入在回答内容下方）
-            if (_renderContent && widget.answerId.isNotEmpty)
-              SliverToBoxAdapter(
-                child: InlineCommentWidget(
-                  resourceId: widget.answerId,
-                  resourceType: 'answers',
-                  showHeader: true,
-                ),
-              ),
-            // 底部间距
-            const SliverToBoxAdapter(child: SizedBox(height: 100)),
-          ],
+              // 底部间距
+              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            ],
+          ),
         ),
       );
     });

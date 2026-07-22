@@ -8,6 +8,7 @@ import '../../common/widgets/loading_widget.dart';
 import '../../common/widgets/error_widget.dart' as custom;
 
 import '../../common/widgets/html/custom_html.dart';
+import '../../common/widgets/html/html_chunker.dart';
 import '../../common/widgets/inline_comment_widget.dart';
 
 /// 想法（Pin）详情页
@@ -164,6 +165,9 @@ class _PinPageState extends State<PinPage> {
                       ? contentRaw
                       : contentRaw.toString(),
                   fontSize: 17,
+                  imageUrls: HtmlChunker.extractImageUrls(
+                    contentRaw is String ? contentRaw : contentRaw.toString(),
+                  ),
                 ),
               ),
 

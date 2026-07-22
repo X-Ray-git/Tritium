@@ -6,16 +6,23 @@ class MainController extends GetxController {
   /// 当前选中的底部导航索引
   final currentIndex = 0.obs;
 
-  /// 滚动到顶部回调 (由子页面设置)
-  VoidCallback? scrollToTopCallback;
+  final Map<int, VoidCallback> _scrollToTopCallbacks = {};
+
+  void registerScrollToTop(int index, VoidCallback callback) {
+    _scrollToTopCallbacks[index] = callback;
+  }
+
+  void unregisterScrollToTop(int index, VoidCallback callback) {
+    if (_scrollToTopCallbacks[index] == callback) {
+      _scrollToTopCallbacks.remove(index);
+    }
+  }
 
   /// 切换底部导航
   void changeIndex(int index) {
     // 如果点击的是当前已选中的 Tab，触发滚动到顶部
-    if (index == 0 &&
-        currentIndex.value == index &&
-        scrollToTopCallback != null) {
-      scrollToTopCallback!();
+    if (currentIndex.value == index) {
+      _scrollToTopCallbacks[index]?.call();
     }
     currentIndex.value = index;
   }

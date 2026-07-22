@@ -101,7 +101,7 @@ class HotCard extends StatelessWidget {
             Get.toNamed(Routes.question, arguments: {'questionId': questionId});
           }
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(

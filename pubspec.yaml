@@ -33,6 +33,7 @@ dependencies:
 
   # HTML 渲染
   flutter_html: ^3.0.0-beta.2
+  html: ^0.15.6
   # 获取 app 信息
   package_info_plus: ^9.0.0
   # 正文外部链接和暂无原生阅读页的内容
@@ -48,6 +49,7 @@ dependencies:
 
   # 保存到相册
   gal: ^2.3.0
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

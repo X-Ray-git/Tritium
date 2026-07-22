@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../common/widgets/app_chrome.dart';
-import '../home/home_page.dart';
+import '../../utils/storage.dart';
+import '../home/hot_page.dart';
+import '../home/recommend_page.dart';
 import '../settings/settings_page.dart';
 import 'main_controller.dart';
 
-/// Android 主框架只承载真实可用的“内容”和“设置”两个区域。
+/// Android 主框架直接呈现两个内容入口和设置，避免额外占用顶部空间。
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
 
@@ -19,22 +21,24 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   late final MainController controller;
 
-  static const _pages = <Widget>[HomePage(), SettingsPage()];
+  static const _pages = <Widget>[RecommendPage(), HotPage(), SettingsPage()];
 
   @override
   void initState() {
     super.initState();
     controller = Get.put(MainController());
+    controller.currentIndex.value = Pref.defaultHomeTab.clamp(0, 1);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
+      extendBodyBehindAppBar: true,
       appBar: TritiumBlurAppBar(
         title: Obx(
           () => Text(
-            controller.currentIndex.value == 0 ? 'Tritium' : '设置',
+            controller.currentIndex.value == 2 ? '设置' : 'Tritium',
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
           ),
         ),
@@ -93,9 +97,14 @@ class _FloatingNavigation extends StatelessWidget {
   static const _items =
       <({IconData icon, IconData selectedIcon, String label})>[
         (
-          icon: Icons.article_outlined,
-          selectedIcon: Icons.article_rounded,
-          label: '内容',
+          icon: Icons.auto_awesome_outlined,
+          selectedIcon: Icons.auto_awesome_rounded,
+          label: '推荐',
+        ),
+        (
+          icon: Icons.local_fire_department_outlined,
+          selectedIcon: Icons.local_fire_department_rounded,
+          label: '热榜',
         ),
         (
           icon: Icons.settings_outlined,
