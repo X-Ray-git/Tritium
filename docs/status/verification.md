@@ -33,3 +33,10 @@
 - 真机确认回答正文深度阅读后反向滚动不会提前展开标题，固定 AppBar 不再出现边界
   弹性抖动。
 - 真机确认设置页首张卡片使用正确的 AppBar 顶部安全距离，不再被顶栏遮挡。
+
+## 2026-07-22：v0.2.0 发布流程诊断
+
+- tag 工作流 run `29896803970` 在准备 Android job 时失败，未进入分析、签名或构建。
+- 原因是参考工程当时使用的 `actions/setup-java@v6` 在 GitHub Actions 中不存在。
+- Tritium 恢复使用已验证可用的 `actions/setup-java@v5`；发布结构继续参考 Auto Folo，
+  但第三方 action 版本必须以 Tritium 的实际 CI 验证结果为准。

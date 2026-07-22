@@ -43,3 +43,9 @@
 
 后果：两款应用的签名身份和密钥轮换相互关联，密钥泄露会同时影响两者。共享签名不
 改变两个应用的包名、数据目录和更新关系。
+
+## 2026-07-22：发布流程参考不等于版本盲从
+
+决策：版本提交、annotated tag、签名构建和 GitHub Release 的阶段设计继续与 Auto
+Folo 对齐；Flutter 与 GitHub Actions 版本需要在 Tritium CI 中独立验证。参考工程中
+尚不存在的 action tag 不得直接同步。
