@@ -40,3 +40,11 @@
 - 原因是参考工程当时使用的 `actions/setup-java@v6` 在 GitHub Actions 中不存在。
 - Tritium 恢复使用已验证可用的 `actions/setup-java@v5`；发布结构继续参考 Auto Folo，
   但第三方 action 版本必须以 Tritium 的实际 CI 验证结果为准。
+
+## 2026-07-22：v0.2.1 正式发布
+
+- GitHub Actions run `29897040318`：版本校验、分析、22 项测试、正式签名、Release
+  APK 构建、artifact 上传和 GitHub Release 发布全部通过。
+- Release：`v0.2.1`，版本号 `0.2.1+3`，非草稿、非预发布。
+- APK：`Tritium-android-v0.2.1.apk`，SHA-256 为
+  `bcccd61dd83de9601bd2a4f758dd9cf6e8e74228d8fd2097b8d7347922fb4596`。
