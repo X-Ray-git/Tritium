@@ -693,9 +693,10 @@ class RefreshIndicatorState extends State<RefreshIndicator>
             left: 0.0,
             right: 0.0,
             child: SizeTransition(
-              alignment: _isIndicatorAtTop!
-                  ? Alignment.bottomCenter
-                  : Alignment.topCenter,
+              // Flutter 3.41 使用 axisAlignment；1/-1 与新版的
+              // bottomCenter/topCenter 在垂直 SizeTransition 中等价。
+              // ignore: deprecated_member_use
+              axisAlignment: _isIndicatorAtTop! ? 1.0 : -1.0,
               sizeFactor: _positionFactor, // This is what brings it down.
               child: Padding(
                 padding: _isIndicatorAtTop!
