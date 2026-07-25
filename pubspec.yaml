@@ -50,6 +50,7 @@ dependencies:
   # 保存到相册
   gal: ^2.3.0
   share_plus: ^10.1.4
+  vector_math: ^2.2.0
 
 dev_dependencies:
   flutter_test:

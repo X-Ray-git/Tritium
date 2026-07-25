@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'app_chrome.dart';
+import 'interactiveviewer_gallery/interactive_viewer_boundary.dart';
 
 /// 正文图片画廊：同文图片翻页、双击/双指缩放、下拉退出和长按操作。
 class ImageViewer extends StatefulWidget {
@@ -59,9 +60,7 @@ class _ImageViewerState extends State<ImageViewer>
   late final AnimationController _zoomAnimationController;
   Animation<Matrix4>? _zoomAnimation;
   late int _currentIndex;
-  bool _isZoomed = false;
-  bool _isReturning = false;
-  double _dismissOffset = 0;
+  bool _enablePageView = true;
   Offset _doubleTapPosition = Offset.zero;
 
   String get _currentUrl => widget.imageUrls[_currentIndex];
@@ -92,11 +91,7 @@ class _ImageViewerState extends State<ImageViewer>
     super.dispose();
   }
 
-  void _setZoomed(bool value) {
-    if (_isZoomed != value) setState(() => _isZoomed = value);
-  }
-
-  void _animateZoomTo(Matrix4 target, {bool resetAfter = false}) {
+  void _animateZoomTo(Matrix4 target, {double? targetScale}) {
     _zoomAnimation =
         Matrix4Tween(
           begin: _transformationController.value,
@@ -108,14 +103,14 @@ class _ImageViewerState extends State<ImageViewer>
           ),
         );
     _zoomAnimationController.forward(from: 0).whenComplete(() {
-      if (mounted && resetAfter) _setZoomed(false);
+      if (mounted && targetScale != null) _onScaleChanged(targetScale);
     });
   }
 
   void _onImageDoubleTap(Offset position) {
     final currentScale = _transformationController.value.getMaxScaleOnAxis();
     if (currentScale > 1.01) {
-      _animateZoomTo(Matrix4.identity(), resetAfter: true);
+      _animateZoomTo(Matrix4.identity(), targetScale: 1);
       return;
     }
 
@@ -127,44 +122,46 @@ class _ImageViewerState extends State<ImageViewer>
             -position.dy * (targetScale - 1),
             0,
           );
-    _setZoomed(true);
-    _animateZoomTo(target);
+    _animateZoomTo(target, targetScale: targetScale);
   }
 
-  void _onImageInteractionUpdate(ScaleUpdateDetails details) {
-    final scale = _transformationController.value.getMaxScaleOnAxis();
-    if (scale > 1.01) {
-      _setZoomed(true);
-    } else if (details.scale < 0.99) {
-      _setZoomed(false);
+  void _onScaleChanged(double scale) {
+    final initialScale = scale <= 1.01;
+    if (initialScale && !_enablePageView) {
+      setState(() => _enablePageView = true);
+    } else if (!initialScale && _enablePageView) {
+      setState(() => _enablePageView = false);
     }
   }
 
-  void _onImageInteractionEnd(ScaleEndDetails details) {
-    if (_transformationController.value.getMaxScaleOnAxis() <= 1.01) {
-      _transformationController.value = Matrix4.identity();
-      _setZoomed(false);
+  void _onLeftBoundaryHit() {
+    final page = _pageController.page;
+    if (!_enablePageView && page != null && page.floor() > 0) {
+      setState(() => _enablePageView = true);
     }
   }
 
-  void _onVerticalDragUpdate(DragUpdateDetails details) {
-    if (_isZoomed) return;
+  void _onRightBoundaryHit() {
+    final page = _pageController.page;
+    if (!_enablePageView &&
+        page != null &&
+        page.floor() < widget.imageUrls.length - 1) {
+      setState(() => _enablePageView = true);
+    }
+  }
+
+  void _onNoBoundaryHit() {
+    if (_enablePageView) setState(() => _enablePageView = false);
+  }
+
+  void _onPageChanged(int index) {
     setState(() {
-      _isReturning = false;
-      _dismissOffset = (_dismissOffset + details.delta.dy).clamp(0, 600);
+      _currentIndex = index;
+      _enablePageView = true;
     });
-  }
-
-  void _onVerticalDragEnd(DragEndDetails details) {
-    if (_isZoomed) return;
-    if (_dismissOffset > 120 || (details.primaryVelocity ?? 0) > 700) {
-      Navigator.of(context).pop();
-      return;
+    if (_transformationController.value != Matrix4.identity()) {
+      _animateZoomTo(Matrix4.identity());
     }
-    setState(() {
-      _isReturning = true;
-      _dismissOffset = 0;
-    });
   }
 
   void _showMenu() {
@@ -270,146 +267,121 @@ class _ImageViewerState extends State<ImageViewer>
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    final progress = (_dismissOffset / screenHeight).clamp(0.0, 1.0);
-    final scale = 1 - progress * 0.14;
-    final backgroundOpacity = 1 - progress * 0.75;
     final topPadding = MediaQuery.paddingOf(context).top;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: ColoredBox(
-          color: Colors.black.withValues(alpha: backgroundOpacity),
-          child: Stack(
-            children: [
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onVerticalDragUpdate: _isZoomed ? null : _onVerticalDragUpdate,
-                onVerticalDragEnd: _isZoomed ? null : _onVerticalDragEnd,
-                child: AnimatedContainer(
-                  duration: _isReturning
-                      ? const Duration(milliseconds: 220)
-                      : Duration.zero,
-                  curve: Curves.easeOutCubic,
-                  transform: Matrix4.identity()
-                    ..translateByDouble(0, _dismissOffset, 0, 1)
-                    ..scaleByDouble(scale, scale, 1, 1),
-                  transformAlignment: Alignment.center,
-                  child: PageView.builder(
-                    controller: _pageController,
-                    physics: _isZoomed
-                        ? const NeverScrollableScrollPhysics()
-                        : const PageScrollPhysics(),
-                    itemCount: widget.imageUrls.length,
-                    onPageChanged: (index) {
-                      setState(() {
-                        _currentIndex = index;
-                        _isZoomed = false;
-                        _transformationController.value = Matrix4.identity();
-                      });
-                    },
-                    itemBuilder: (context, index) {
-                      final url = widget.imageUrls[index];
-                      return _ZoomableGalleryImage(
-                        key: ValueKey(url),
-                        imageUrl: url,
-                        transformationController: _transformationController,
-                        zoomed: _isZoomed,
-                        onTap: () => Navigator.of(context).pop(),
-                        onLongPress: _showMenu,
-                        onDoubleTapDown: (position) =>
-                            _doubleTapPosition = position,
-                        onDoubleTap: () =>
-                            _onImageDoubleTap(_doubleTapPosition),
-                        onInteractionUpdate: _onImageInteractionUpdate,
-                        onInteractionEnd: _onImageInteractionEnd,
-                      );
-                    },
-                  ),
-                ),
+        body: Stack(
+          children: [
+            InteractiveViewerBoundary(
+              controller: _transformationController,
+              boundaryWidth: MediaQuery.sizeOf(context).width,
+              minScale: 1,
+              maxScale: 5,
+              onScaleChanged: _onScaleChanged,
+              onLeftBoundaryHit: _onLeftBoundaryHit,
+              onRightBoundaryHit: _onRightBoundaryHit,
+              onNoBoundaryHit: _onNoBoundaryHit,
+              onDismissed: () => Navigator.of(context).pop(),
+              onReset: () {
+                if (!_enablePageView) {
+                  setState(() => _enablePageView = true);
+                }
+              },
+              child: PageView.builder(
+                controller: _pageController,
+                physics: _enablePageView
+                    ? const PageScrollPhysics()
+                    : const NeverScrollableScrollPhysics(),
+                itemCount: widget.imageUrls.length,
+                onPageChanged: _onPageChanged,
+                itemBuilder: (context, index) {
+                  final url = widget.imageUrls[index];
+                  return _GalleryImage(
+                    key: ValueKey(url),
+                    imageUrl: url,
+                    onTap: () => Navigator.of(context).pop(),
+                    onLongPress: _showMenu,
+                    onDoubleTapDown: (position) =>
+                        _doubleTapPosition = position,
+                    onDoubleTap: () => _onImageDoubleTap(_doubleTapPosition),
+                  );
+                },
               ),
-              Positioned(
-                top: topPadding + 12,
-                left: 16,
-                right: 16,
-                child: IgnorePointer(
-                  ignoring: _isZoomed,
-                  child: AnimatedOpacity(
-                    opacity: _isZoomed ? 0 : 1,
-                    duration: const Duration(milliseconds: 180),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        if (widget.imageUrls.length > 1)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Text(
-                              '${_currentIndex + 1} / ${widget.imageUrls.length}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 1,
-                              ),
-                            ),
+            ),
+            Positioned(
+              top: topPadding + 12,
+              left: 16,
+              right: 16,
+              child: IgnorePointer(
+                ignoring: !_enablePageView,
+                child: AnimatedOpacity(
+                  opacity: _enablePageView ? 1 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (widget.imageUrls.length > 1)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 6,
                           ),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: IconButton.filledTonal(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close_rounded),
-                            color: Colors.white,
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.15,
-                              ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            '${_currentIndex + 1} / ${widget.imageUrls.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1,
                             ),
                           ),
                         ),
-                      ],
-                    ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: IconButton.filledTonal(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                          color: Colors.white,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.15,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _ZoomableGalleryImage extends StatelessWidget {
+class _GalleryImage extends StatelessWidget {
   final String imageUrl;
-  final TransformationController transformationController;
-  final bool zoomed;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final ValueChanged<Offset> onDoubleTapDown;
   final VoidCallback onDoubleTap;
-  final ValueChanged<ScaleUpdateDetails> onInteractionUpdate;
-  final ValueChanged<ScaleEndDetails> onInteractionEnd;
 
-  const _ZoomableGalleryImage({
+  const _GalleryImage({
     super.key,
     required this.imageUrl,
-    required this.transformationController,
-    required this.zoomed,
     required this.onTap,
     required this.onLongPress,
     required this.onDoubleTapDown,
     required this.onDoubleTap,
-    required this.onInteractionUpdate,
-    required this.onInteractionEnd,
   });
 
   @override
@@ -425,48 +397,39 @@ class _ZoomableGalleryImage extends StatelessWidget {
       onLongPress: onLongPress,
       onDoubleTapDown: (details) => onDoubleTapDown(details.localPosition),
       onDoubleTap: onDoubleTap,
-      child: InteractiveViewer(
-        transformationController: transformationController,
-        minScale: 1,
-        maxScale: 5,
-        panEnabled: zoomed,
-        clipBehavior: Clip.none,
-        onInteractionUpdate: onInteractionUpdate,
-        onInteractionEnd: onInteractionEnd,
-        child: Center(
-          child: Hero(
-            tag: imageUrl,
-            child: SizedBox.expand(
-              child: CachedNetworkImage(
-                imageUrl: imageUrl,
-                fit: BoxFit.contain,
-                httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
-                memCacheWidth: cacheWidth,
-                maxWidthDiskCache: cacheWidth * 2,
-                fadeInDuration: const Duration(milliseconds: 250),
-                fadeOutDuration: const Duration(milliseconds: 80),
-                placeholder: (context, url) => const Center(
-                  child: SizedBox.square(
-                    dimension: 40,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white70,
-                    ),
+      child: Center(
+        child: Hero(
+          tag: imageUrl,
+          child: SizedBox.expand(
+            child: CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.contain,
+              httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
+              memCacheWidth: cacheWidth,
+              maxWidthDiskCache: cacheWidth * 2,
+              fadeInDuration: const Duration(milliseconds: 250),
+              fadeOutDuration: const Duration(milliseconds: 80),
+              placeholder: (context, url) => const Center(
+                child: SizedBox.square(
+                  dimension: 40,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white70,
                   ),
                 ),
-                errorWidget: (context, url, error) => const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.broken_image_rounded,
-                        color: Colors.white70,
-                        size: 42,
-                      ),
-                      SizedBox(height: 8),
-                      Text('加载失败', style: TextStyle(color: Colors.white70)),
-                    ],
-                  ),
+              ),
+              errorWidget: (context, url, error) => const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.broken_image_rounded,
+                      color: Colors.white70,
+                      size: 42,
+                    ),
+                    SizedBox(height: 8),
+                    Text('加载失败', style: TextStyle(color: Colors.white70)),
+                  ],
                 ),
               ),
             ),

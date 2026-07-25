@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../common/widgets/app_chrome.dart';
+import '../../utils/move_to_background.dart';
 import '../../utils/storage.dart';
 import '../home/hot_page.dart';
 import '../home/recommend_page.dart';
@@ -32,27 +33,33 @@ class _MainPageState extends State<MainPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBody: true,
-      extendBodyBehindAppBar: true,
-      appBar: TritiumBlurAppBar(
-        title: Obx(
-          () => Text(
-            controller.currentIndex.value == 2 ? '设置' : 'Tritium',
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) MoveToBackground.moveTaskToBack();
+      },
+      child: Scaffold(
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        appBar: TritiumBlurAppBar(
+          title: Obx(
+            () => Text(
+              controller.currentIndex.value == 2 ? '设置' : 'Tritium',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
           ),
         ),
-      ),
-      body: Obx(
-        () => _FadeIndexedStack(
-          index: controller.currentIndex.value,
-          children: _pages,
+        body: Obx(
+          () => _FadeIndexedStack(
+            index: controller.currentIndex.value,
+            children: _pages,
+          ),
         ),
-      ),
-      bottomNavigationBar: Obx(
-        () => _FloatingNavigation(
-          selectedIndex: controller.currentIndex.value,
-          onSelected: controller.changeIndex,
+        bottomNavigationBar: Obx(
+          () => _FloatingNavigation(
+            selectedIndex: controller.currentIndex.value,
+            onSelected: controller.changeIndex,
+          ),
         ),
       ),
     );
