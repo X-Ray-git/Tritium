@@ -63,6 +63,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 subtitle: Pref.defaultCommentSort == 'score' ? '按热度' : '按时间',
                 onTap: _selectCommentSort,
               ),
+              _divider(),
+              _tile(
+                icon: Icons.history_rounded,
+                title: '阅读历史',
+                subtitle: '仅保存在本机，并记录正文阅读进度',
+                onTap: () => Get.toNamed(Routes.history),
+              ),
             ],
           ),
         ),

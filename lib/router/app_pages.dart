@@ -8,6 +8,7 @@ import '../pages/article/article_page.dart';
 import '../pages/user/user_page.dart';
 import '../pages/settings/display_mode_page.dart';
 import '../pages/pin/pin_page.dart';
+import '../pages/history/history_page.dart';
 
 /// 路由名称
 class Routes {
@@ -21,6 +22,7 @@ class Routes {
   static const String user = '/user';
   static const String displayMode = '/displayMode';
   static const String pin = '/pin';
+  static const String history = '/history';
 }
 
 /// 路由定义
@@ -49,4 +51,9 @@ List<GetPage> get appPages => [
     transition: Transition.rightToLeft,
   ),
   GetPage(name: Routes.pin, page: () => const PinPage()),
+  GetPage(
+    name: Routes.history,
+    page: () => const HistoryPage(),
+    transition: Transition.rightToLeft,
+  ),
 ];

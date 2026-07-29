@@ -60,9 +60,7 @@ dev_dependencies:
 
 flutter_launcher_icons:
   android: true
-  image_path: "assets/images/logo/icon.jpg"
-  adaptive_icon_background: "#3961FF"
-  adaptive_icon_foreground: "assets/images/logo/icon.jpg"
+  image_path: "assets/images/logo/launcher-icon.png"
 
 flutter:
   uses-material-design: true

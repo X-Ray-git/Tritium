@@ -48,3 +48,20 @@
 - Release：`v0.2.1`，版本号 `0.2.1+3`，非草稿、非预发布。
 - APK：`Tritium-android-v0.2.1.apk`，SHA-256 为
   `bcccd61dd83de9601bd2a4f758dd9cf6e8e74228d8fd2097b8d7347922fb4596`。
+
+## 2026-07-29：阅读能力、导航、图标与评论预览整合
+
+- `dart analyze`：通过，无诊断。
+- `flutter test`：35 项通过。新增覆盖内容链接外部兜底、本地阅读历史与进度、
+  `<figure>` 图片宽度、长正文稳定布局，以及缩略跟评的方括号/HTML 表情加载与
+  普通附件过滤。
+- `flutter build apk --debug`：通过。
+- `flutter build apk --release`：通过，产物 65.6MB；本地使用 debug 签名回退，
+  本次普通提交不创建 tag 或 GitHub Release。
+- Debug APK 已检查只包含五档静态 `mipmap/ic_launcher.png`，不包含 Adaptive Icon
+  XML、foreground 或 background 资源。
+- 真机确认多图文章的阅读进度条不再随滚动逐块跳动。
+
+本轮仍需真机覆盖外部链接冷启动/运行中复用、阅读位置恢复、缩略跟评表情、新导航
+在不同系统栏模式下的阴影，以及不同启动器的静态图标处理；详见
+[真机验收清单](device-acceptance.md)。

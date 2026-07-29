@@ -47,6 +47,9 @@ class StorageKeys {
 
   // 振动反馈
   static const String enableSwipeHaptics = 'enable_swipe_haptics';
+
+  // 本地阅读状态
+  static const String readingHistory = 'reading_history';
 }
 
 /// API 路径常量

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
@@ -16,6 +18,9 @@ import '../../common/widgets/inline_comment_widget.dart';
 import '../../common/widgets/blur_container.dart';
 import '../../common/widgets/app_chrome.dart';
 import '../../utils/comment_preload.dart';
+import '../../common/widgets/content_actions.dart';
+import '../../common/widgets/reading_progress.dart';
+import '../../services/reading_history_service.dart';
 
 /// 回答详情页 (容器)
 class AnswerPage extends StatefulWidget {
@@ -56,6 +61,7 @@ class _AnswerPageState extends State<AnswerPage> {
   late final ValueNotifier<dynamic> _voteupCountNotifier;
   late final ValueNotifier<dynamic> _commentCountNotifier;
   late final ValueNotifier<int> _settledPageIndexNotifier;
+  final ValueNotifier<double> _readingProgressNotifier = ValueNotifier(0);
   int _loadGeneration = 0;
 
   @override
@@ -116,6 +122,7 @@ class _AnswerPageState extends State<AnswerPage> {
     _voteupCountNotifier.dispose();
     _commentCountNotifier.dispose();
     _settledPageIndexNotifier.dispose();
+    _readingProgressNotifier.dispose();
     super.dispose();
   }
 
@@ -265,6 +272,16 @@ class _AnswerPageState extends State<AnswerPage> {
                 ),
               ),
         ),
+        actions: [
+          ValueListenableBuilder<int>(
+            valueListenable: _settledPageIndexNotifier,
+            builder: (context, index, child) => ContentActionsMenu(
+              title: _questionTitleNotifier.value,
+              url: 'https://www.zhihu.com/answer/${_answerIds[index]}',
+            ),
+          ),
+        ],
+        bottom: TritiumReadingProgressBar(progress: _readingProgressNotifier),
       ),
       body: NotificationListener<ScrollEndNotification>(
         onNotification: _handlePageScrollEnd,
@@ -311,6 +328,11 @@ class _AnswerPageState extends State<AnswerPage> {
                 _contentReadyAnswerIds.add(answerId);
                 if (_pendingCommentAnswerId == answerId) {
                   _scrollToComments(answerId);
+                }
+              },
+              onReadingProgressChanged: (progress) {
+                if (_settledPageIndexNotifier.value == index) {
+                  _readingProgressNotifier.value = progress;
                 }
               },
             );
@@ -389,6 +411,7 @@ class _AnswerSinglePage extends StatefulWidget {
   final VoidCallback? onContentReady;
   final int pageIndex;
   final ValueListenable<int> settledPageIndexListenable;
+  final ValueChanged<double> onReadingProgressChanged;
 
   const _AnswerSinglePage({
     super.key,
@@ -402,6 +425,7 @@ class _AnswerSinglePage extends StatefulWidget {
     this.onContentReady,
     required this.pageIndex,
     required this.settledPageIndexListenable,
+    required this.onReadingProgressChanged,
   });
 
   @override
@@ -425,6 +449,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
   bool _titleVisibilityUpdateScheduled = false;
   bool _titleIsCovered = false;
   int _loadGeneration = 0;
+  late final ReadingSession _readingSession;
 
   @override
   bool get wantKeepAlive => true; // 保持页面状态
@@ -434,6 +459,13 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
     super.initState();
     _currentQuestionId = widget.questionId;
     widget.settledPageIndexListenable.addListener(_onSettledPageChanged);
+    _readingSession = ReadingSession(
+      kind: 'answer',
+      id: widget.answerId,
+      scrollController: _scrollController,
+      bodyEndKey: widget.commentsKey,
+    );
+    _readingSession.progress.addListener(_notifyReadingProgress);
 
     if (widget.initialData != null) {
       _answerData = widget.initialData;
@@ -448,6 +480,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
       }
       // 触发 questionId 回调（用于获取回答列表以支持滑动）
       _triggerQuestionIdCallback();
+      _recordHistory(_answerData!);
     } else {
       // 检查缓存
       if (AnswerHttp.cache.containsKey(widget.answerId)) {
@@ -459,6 +492,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
         _renderContent = true; // 缓存命中，立即渲染
         // 触发 questionId 回调
         _triggerQuestionIdCallback();
+        _recordHistory(_answerData!);
       } else {
         _loadData();
       }
@@ -485,6 +519,8 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
   @override
   void dispose() {
     _loadGeneration++;
+    _readingSession.progress.removeListener(_notifyReadingProgress);
+    _readingSession.dispose();
     _scrollController.dispose();
     widget.settledPageIndexListenable.removeListener(_onSettledPageChanged);
     super.dispose();
@@ -494,8 +530,16 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
     _maybeShowComments();
     if (widget.settledPageIndexListenable.value == widget.pageIndex) {
       widget.onTitleVisibilityChanged(_titleIsCovered);
+      widget.onReadingProgressChanged(_readingSession.progress.value);
+      if (_answerData != null) _recordHistory(_answerData!);
     }
     _scheduleTitleVisibilityUpdate();
+  }
+
+  void _notifyReadingProgress() {
+    if (widget.settledPageIndexListenable.value == widget.pageIndex) {
+      widget.onReadingProgressChanged(_readingSession.progress.value);
+    }
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
@@ -538,6 +582,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
 
   void _handleContentReady() {
     _contentLayoutReady = true;
+    _readingSession.contentReady();
     widget.onContentReady?.call();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -567,6 +612,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
     )) {
       return;
     }
+    _readingSession.refresh();
     setState(() => _showComments = true);
   }
 
@@ -585,6 +631,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
       _renderContent = true;
       // 最后更新响应式状态，只触发一次页面构建。
       _loadingState.value = result;
+      _recordHistory(_answerData!);
 
       // 尝试补全 QuestionId
       if (_currentQuestionId == null && _answerData!['question'] != null) {
@@ -602,6 +649,23 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
     } else if (result is Error) {
       _loadingState.value = Error((result as Error).errMsg);
     }
+  }
+
+  void _recordHistory(Map<String, dynamic> data) {
+    if (widget.settledPageIndexListenable.value != widget.pageIndex) return;
+    final question = data['question'];
+    final title = question is Map
+        ? question['title']?.toString() ?? '回答详情'
+        : '回答详情';
+    unawaited(
+      ReadingHistoryService.record(
+        kind: 'answer',
+        id: widget.answerId,
+        title: title,
+        preview: data['excerpt']?.toString() ?? '',
+        url: 'https://www.zhihu.com/answer/${widget.answerId}',
+      ),
+    );
   }
 
   @override

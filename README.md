@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/images/logo/icon.jpg" width="120" alt="Tritium Logo">
+  <img src="assets/images/logo/readme-icon.png" width="256" alt="Tritium Logo">
 </p>
 
 # Tritium
@@ -13,6 +13,9 @@ Tritium 是一个专注阅读体验的非官方知乎 Android 客户端，使用
 - 浏览推荐和热榜，阅读问题、回答、文章与想法
 - 查看评论、回复数量、点赞数量和用户公开资料
 - 知乎内容链接在应用内跳转，外部链接和视频交给系统浏览器
+- 支持从浏览器或其他应用直接打开知乎链接
+- 正文阅读进度、位置恢复和仅保存在本机的阅读历史
+- 内容分享、复制链接和浏览器打开
 - 推荐、热榜与设置主导航，支持浅色、深色及跟随系统
 - 固定使用 Tritium 品牌色 `RGB(57, 97, 255)` / `#3961FF`
 - 支持高刷新率显示模式

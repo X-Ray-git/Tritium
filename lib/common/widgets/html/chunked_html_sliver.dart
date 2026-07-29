@@ -5,8 +5,9 @@ import 'html_chunker.dart';
 
 /// 长正文的 Sliver 渲染入口。
 ///
-/// 短正文保持一次渲染；长正文先在必要时移出主 Isolate 解析，再通过 SliverList 按需
-/// 构建，避免打开长文章时一次创建整棵 HTML Widget 树。
+/// 长正文先在必要时移出主 Isolate 解析并合并成较大的语义块，再通过单个
+/// SliverToBoxAdapter 一次布局。不要改回变量高度 SliverList：它会在图片和新块
+/// 首次进入视口时持续修正正文终点，导致阅读进度条跳动。
 class ChunkedHtmlSliver extends StatefulWidget {
   final String content;
   final double fontSize;
@@ -101,19 +102,20 @@ class _ChunkedHtmlSliverState extends State<ChunkedHtmlSliver> {
 
     return SliverPadding(
       padding: widget.padding,
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) => RepaintBoundary(
-            child: CustomHtml(
-              content: _chunks[index],
-              fontSize: widget.fontSize,
-              imageUrls: widget.imageUrls,
+      sliver: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: List.generate(
+            _chunks.length,
+            (index) => RepaintBoundary(
+              child: CustomHtml(
+                content: _chunks[index],
+                fontSize: widget.fontSize,
+                imageUrls: widget.imageUrls,
+              ),
             ),
+            growable: false,
           ),
-          childCount: _chunks.length,
-          addAutomaticKeepAlives: true,
-          addRepaintBoundaries: false,
-          addSemanticIndexes: true,
         ),
       ),
     );

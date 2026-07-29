@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:tritium/http/content_http.dart';
 import 'package:tritium/pages/answer/answer_page.dart';
+import 'package:tritium/services/reading_history_service.dart';
 import 'package:tritium/utils/storage.dart';
 
 void main() {
@@ -15,6 +16,7 @@ void main() {
       'tritium-answer-pager-test-',
     );
     await GStorage.init(pathOverride: storageDirectory.path);
+    ReadingHistoryService.persistenceEnabled = false;
   });
 
   setUp(() {
@@ -45,6 +47,7 @@ void main() {
   });
 
   tearDownAll(() async {
+    ReadingHistoryService.persistenceEnabled = true;
     await GStorage.close();
     await storageDirectory.delete(recursive: true);
   });

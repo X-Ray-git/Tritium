@@ -38,6 +38,16 @@ void main() {
       expect(target?.uri.toString(), 'https://www.zhihu.com/zvideo/77');
     });
 
+    test('falls back to a browser URL for unsupported Zhihu destinations', () {
+      final topic = ContentLinkTarget.parse('zhihu://topic/19550517');
+      final organization = ContentLinkTarget.parse('zhihu://org/example');
+
+      expect(topic?.kind, ContentLinkKind.external);
+      expect(topic?.uri.toString(), 'https://www.zhihu.com/topic/19550517');
+      expect(organization?.kind, ContentLinkKind.external);
+      expect(organization?.uri.toString(), 'https://www.zhihu.com/org/example');
+    });
+
     test('rejects unsupported schemes and malformed links', () {
       expect(ContentLinkTarget.parse('javascript:alert(1)'), isNull);
       expect(ContentLinkTarget.parse('not a URL'), isNull);

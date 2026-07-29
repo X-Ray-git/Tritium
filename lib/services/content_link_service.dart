@@ -42,7 +42,13 @@ class ContentLinkTarget {
       ...uri.pathSegments,
     ];
     final target = _parseSegments(uri, segments);
-    if (target == null || target.kind != ContentLinkKind.video) return target;
+    if (target == null) {
+      return ContentLinkTarget(
+        kind: ContentLinkKind.external,
+        uri: Uri.https('www.zhihu.com', '/${segments.join('/')}'),
+      );
+    }
+    if (target.kind != ContentLinkKind.video) return target;
 
     return ContentLinkTarget(
       kind: ContentLinkKind.video,

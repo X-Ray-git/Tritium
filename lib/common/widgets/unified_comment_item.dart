@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 
 import '../../router/app_pages.dart';
 import 'child_comment_panel.dart';
+import 'html/compact_html_preview.dart';
 import 'html/custom_html.dart';
 
 /// 只读评论项：展示点赞/回复数量，但不伪装成可写操作。
@@ -266,30 +267,19 @@ class _ChildPreview extends StatelessWidget {
                   final text = raw['content']?.toString() ?? '';
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 4),
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: '${name ?? '匿名用户'}：',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: colors.primary,
-                            ),
-                          ),
-                          TextSpan(
-                            text: text
-                                .replaceAll(RegExp(r'<[^>]*>'), '')
-                                .trim(),
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+                    child: CompactHtmlPreview(
+                      content: text,
+                      prefix: '${name ?? '匿名用户'}：',
+                      prefixStyle: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: colors.primary,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      textStyle: TextStyle(
+                        fontSize: 13,
+                        color: colors.onSurfaceVariant,
+                        height: 1.45,
+                      ),
                     ),
                   );
                 }),

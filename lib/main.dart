@@ -14,6 +14,7 @@ import 'common/widgets/loading_widget.dart';
 import 'router/app_pages.dart';
 import 'services/account_service.dart';
 import 'services/app_version_service.dart';
+import 'services/deep_link_service.dart';
 import 'utils/storage.dart';
 import 'http/init.dart';
 
@@ -29,6 +30,7 @@ void main() async {
 
   // 注册服务
   Get.put(AccountService());
+  await DeepLinkService.initialize();
 
   // 设置状态栏样式
   SystemChrome.setSystemUIOverlayStyle(

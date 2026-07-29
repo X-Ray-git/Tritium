@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,6 +10,8 @@ import '../../models/common/paging_info.dart';
 import '../../common/widgets/loading_widget.dart';
 import '../../common/widgets/error_widget.dart' as custom;
 import '../../router/app_pages.dart';
+import '../../common/widgets/content_actions.dart';
+import '../../services/reading_history_service.dart';
 
 /// 用户主页
 class UserPage extends StatefulWidget {
@@ -77,6 +81,7 @@ class _UserPageState extends State<UserPage>
     if (result is Success<Map<String, dynamic>>) {
       _userData = result.response;
       _loadingState.value = result;
+      _recordHistory(_userData!);
 
       // 加载回答和文章
       _loadAnswers(generation, reset: true);
@@ -206,6 +211,9 @@ class _UserPageState extends State<UserPage>
                 expandedHeight: 200,
                 pinned: true,
                 title: innerBoxIsScrolled ? Text(name) : null,
+                actions: [
+                  ContentActionsMenu(title: name.toString(), url: _userUrl),
+                ],
                 flexibleSpace: FlexibleSpaceBar(
                   background: Stack(
                     fit: StackFit.expand,
@@ -408,6 +416,25 @@ class _UserPageState extends State<UserPage>
           ),
         );
       }),
+    );
+  }
+
+  String get _userUrl => 'https://www.zhihu.com/people/${_urlToken ?? ''}';
+
+  void _recordHistory(Map<String, dynamic> data) {
+    final id = _urlToken;
+    if (id == null) return;
+    unawaited(
+      ReadingHistoryService.record(
+        kind: 'user',
+        id: id,
+        title: data['name']?.toString() ?? '用户',
+        preview:
+            data['headline']?.toString() ??
+            data['description']?.toString() ??
+            '',
+        url: _userUrl,
+      ),
     );
   }
 

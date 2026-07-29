@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -124,77 +122,56 @@ class _FloatingNavigation extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final safeBottom = MediaQuery.paddingOf(context).bottom;
     return Padding(
-      padding: EdgeInsets.fromLTRB(12, 0, 12, safeBottom + 12),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: SizedBox(
         height: 56,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: dark ? 0.34 : 0.13),
-                blurRadius: 18,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colors.surface.withValues(alpha: dark ? 0.86 : 0.82),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(
-                    color: colors.outlineVariant.withValues(alpha: 0.42),
-                    width: 0.8,
-                  ),
-                ),
-                child: Row(
-                  children: List.generate(_items.length, (index) {
-                    final item = _items[index];
-                    final selected = selectedIndex == index;
-                    return Expanded(
-                      child: Semantics(
-                        selected: selected,
-                        button: true,
-                        label: item.label,
-                        child: Tooltip(
-                          message: item.label,
-                          child: InkWell(
-                            onTap: () => onSelected(index),
-                            customBorder: const StadiumBorder(),
-                            child: Center(
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 220),
-                                curve: Curves.easeOutCubic,
-                                width: 72,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: selected
-                                      ? colors.primary.withValues(alpha: 0.88)
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Icon(
-                                  selected ? item.selectedIcon : item.icon,
-                                  size: 24,
-                                  color: selected
-                                      ? colors.onPrimary
-                                      : colors.onSurfaceVariant,
-                                ),
+        child: CustomPaint(
+          painter: TritiumNavigationOuterShadowPainter(dark: dark),
+          child: TritiumGlassNavigationSurface(
+            child: Row(
+              children: List.generate(_items.length, (index) {
+                final item = _items[index];
+                final selected = selectedIndex == index;
+                return Expanded(
+                  child: Semantics(
+                    selected: selected,
+                    button: true,
+                    label: item.label,
+                    child: Tooltip(
+                      message: item.label,
+                      child: InkWell(
+                        onTap: () => onSelected(index),
+                        customBorder: const StadiumBorder(),
+                        child: Center(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                            width: 52,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: AnimatedScale(
+                              scale: selected ? 1 : 0.96,
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutBack,
+                              child: Icon(
+                                selected ? item.selectedIcon : item.icon,
+                                size: 24,
+                                color: selected
+                                    ? colors.primary
+                                    : colors.onSurfaceVariant,
                               ),
                             ),
                           ),
                         ),
                       ),
-                    );
-                  }),
-                ),
-              ),
+                    ),
+                  ),
+                );
+              }),
             ),
           ),
         ),

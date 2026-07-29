@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -12,6 +14,8 @@ import '../../common/widgets/html/custom_html.dart';
 import '../../common/widgets/html/html_chunker.dart';
 import '../../utils/storage.dart';
 import '../../common/widgets/app_chrome.dart';
+import '../../common/widgets/content_actions.dart';
+import '../../services/reading_history_service.dart';
 
 /// 问题详情页
 class QuestionPage extends StatefulWidget {
@@ -46,6 +50,7 @@ class _QuestionPageState extends State<QuestionPage> {
     if (_questionId != null && QuestionHttp.cache.containsKey(_questionId)) {
       _questionData = QuestionHttp.cache[_questionId];
       _loadingState.value = Success(_questionData!);
+      _recordHistory(_questionData!);
       // 异步加载回答列表
       _loadAnswers();
     } else {
@@ -102,6 +107,7 @@ class _QuestionPageState extends State<QuestionPage> {
       return;
     }
     _questionData = questionResult.response;
+    _recordHistory(_questionData!);
 
     // 加载回答列表
     final answersResult = await QuestionHttp.getQuestionAnswers(
@@ -199,7 +205,12 @@ class _QuestionPageState extends State<QuestionPage> {
         Widget scaffoldContent = CustomScrollView(
           slivers: [
             // AppBar
-            const TritiumSliverAppBar(title: TritiumSectionTitle('问题')),
+            TritiumSliverAppBar(
+              title: const TritiumSectionTitle('问题'),
+              actions: [
+                ContentActionsMenu(title: title.toString(), url: _questionUrl),
+              ],
+            ),
             // 问题标题
             SliverToBoxAdapter(
               child: Container(
@@ -447,6 +458,24 @@ class _QuestionPageState extends State<QuestionPage> {
 
         return Scaffold(body: body);
       }),
+    );
+  }
+
+  String get _questionUrl =>
+      'https://www.zhihu.com/question/${_questionId ?? ''}';
+
+  void _recordHistory(Map<String, dynamic> data) {
+    final id = _questionId;
+    if (id == null) return;
+    unawaited(
+      ReadingHistoryService.record(
+        kind: 'question',
+        id: id,
+        title: data['title']?.toString() ?? '问题',
+        preview:
+            data['excerpt']?.toString() ?? data['detail']?.toString() ?? '',
+        url: _questionUrl,
+      ),
     );
   }
 

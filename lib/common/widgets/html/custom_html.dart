@@ -85,6 +85,8 @@ class CustomHtml extends StatelessWidget {
     'doge': 'https://pic4.zhimg.com/v2-501ff2e1fb7cf3f9326ec5348dc8d84f.png',
   };
 
+  static String? emojiUrl(String name) => _emojiMap[name];
+
   String _processContent(String content) {
     // 替换 <span class="ztext-math">...</span> 为 <tex-math>...</tex-math>
     String processed = content.replaceAllMapped(
@@ -299,6 +301,13 @@ class CustomHtml extends StatelessWidget {
             margin: Margins.zero,
             padding: HtmlPaddings.zero,
             color: cs.onSurface,
+          ),
+          // flutter_html defaults to 40 px on both sides of <figure>.
+          // Auto Folo unwraps figure elements before rendering, so remove that
+          // browser-style gutter while retaining vertical reading rhythm.
+          'figure': Style(
+            margin: Margins.symmetric(vertical: 12),
+            padding: HtmlPaddings.zero,
           ),
           'p': Style(margin: Margins.only(bottom: 14)),
           'h1': Style(
