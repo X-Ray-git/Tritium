@@ -34,7 +34,8 @@ class TritiumReadingProgressBar extends StatelessWidget {
 }
 
 /// Tracks reading progress against the end of the main body, not the end of
-/// comments that may be inserted lazily.
+/// comments that may be inserted lazily. Completion means the body end has
+/// reached the viewport's bottom edge, not its top edge.
 class ReadingSession {
   final String kind;
   final String id;
@@ -44,7 +45,7 @@ class ReadingSession {
 
   bool _restoreRequested = false;
   bool _disposed = false;
-  double? _knownBodyEndOffset;
+  double? _knownBodyEndScrollOffset;
   DateTime _lastPersistedAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   ReadingSession({
@@ -77,41 +78,54 @@ class ReadingSession {
     }
   }
 
-  double? _bodyEndOffset() {
+  double? _bodyEndScrollOffset() {
     if (!scrollController.hasClients) return null;
     final renderObject = bodyEndKey.currentContext?.findRenderObject();
     if (renderObject != null && renderObject.attached) {
       final viewport = RenderAbstractViewport.maybeOf(renderObject);
-      final offset = viewport?.getOffsetToReveal(renderObject, 0).offset;
-      if (offset != null && offset.isFinite && offset > 0) {
-        _knownBodyEndOffset = offset;
+      final offset = viewport?.getOffsetToReveal(renderObject, 1).offset;
+      if (offset != null && offset.isFinite) {
+        final position = scrollController.position;
+        _knownBodyEndScrollOffset = offset.clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
       }
     }
-    if (_knownBodyEndOffset != null) return _knownBodyEndOffset;
+    if (_knownBodyEndScrollOffset != null) {
+      return _knownBodyEndScrollOffset;
+    }
     final estimated = scrollController.position.maxScrollExtent;
-    return estimated.isFinite && estimated > 0 ? estimated : null;
+    return estimated.isFinite ? estimated : null;
   }
 
   void _updateProgress() {
-    final bodyEnd = _bodyEndOffset();
+    final bodyEnd = _bodyEndScrollOffset();
     if (bodyEnd == null || !scrollController.hasClients) return;
-    final next = (scrollController.offset / bodyEnd).clamp(0.0, 1.0);
+    final position = scrollController.position;
+    final travel = bodyEnd - position.minScrollExtent;
+    final next = travel <= precisionErrorTolerance
+        ? 1.0
+        : ((scrollController.offset - position.minScrollExtent) / travel).clamp(
+            0.0,
+            1.0,
+          );
     if ((progress.value - next).abs() >= 0.0005) progress.value = next;
   }
 
   void _restore() {
     if (_disposed || !scrollController.hasClients) return;
     final saved = ReadingHistoryService.find(kind, id)?.progress ?? 0;
-    final bodyEnd = _bodyEndOffset();
+    final bodyEnd = _bodyEndScrollOffset();
     if (saved <= 0 || bodyEnd == null) {
       _updateProgress();
       return;
     }
     final position = scrollController.position;
-    final target = (bodyEnd * saved).clamp(
-      position.minScrollExtent,
-      position.maxScrollExtent,
-    );
+    final target =
+        (position.minScrollExtent +
+                (bodyEnd - position.minScrollExtent) * saved)
+            .clamp(position.minScrollExtent, position.maxScrollExtent);
     scrollController.jumpTo(target);
     _updateProgress();
   }
