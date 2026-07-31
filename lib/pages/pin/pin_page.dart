@@ -103,9 +103,6 @@ class _PinPageState extends State<PinPage> {
       appBar: TritiumBlurAppBar(
         title: const TritiumSectionTitle('想法'),
         actions: [ContentActionsMenu(title: '想法', url: _pinUrl)],
-        bottom: _readingSession == null
-            ? null
-            : TritiumReadingProgressBar(progress: _readingSession!.progress),
       ),
       body: Obx(() {
         final state = _loadingState.value;
@@ -254,7 +251,7 @@ class _PinPageState extends State<PinPage> {
             ],
           ),
         );
-      }),
+      }).withTritiumReadingSession(_readingSession),
     );
   }
 

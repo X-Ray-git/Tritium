@@ -1,5 +1,10 @@
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
+
 import 'init.dart';
 import '../common/constants/constants.dart';
+import '../utils/storage.dart';
 
 /// Feed 相关接口
 class FeedHttp {
@@ -26,6 +31,35 @@ class FeedHttp {
     } catch (e) {
       return Error('网络错误: $e');
     }
+  }
+
+  /// Reports verified recommendation touch/read targets.
+  ///
+  /// The endpoint is a recommendation signal rather than a hard de-duplication
+  /// contract. Callers must only send identities parsed from actual feed
+  /// content and must not invent targets for unknown card formats.
+  static Future<bool> postRecommendationFeedback(
+    List<List<String>> targets,
+  ) async {
+    if (targets.isEmpty || !_hasAuthenticatedCookie()) return false;
+    try {
+      final response = await Request().post(
+        '${Constants.zhihuApiBase}/lastread/touch',
+        data: {'targets': jsonEncode(targets)},
+        options: Options(contentType: Headers.formUrlEncodedContentType),
+      );
+      return response.statusCode != null &&
+          response.statusCode! >= 200 &&
+          response.statusCode! < 300;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool _hasAuthenticatedCookie() {
+    final cookies = Pref.cookies;
+    if (cookies == null || cookies.isEmpty) return false;
+    return RegExp(r'(?:^|;\s*)d_c0=').hasMatch(cookies);
   }
 
   /// 获取热榜

@@ -158,203 +158,206 @@ class _ArticlePageState extends State<ArticlePage> {
         final heroTag = arguments?['heroTag'];
 
         Widget scaffoldContent = Scaffold(
-          body: TritiumRefreshIndicator(
-            onRefresh: _loadData,
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                if (notification.metrics.axis == Axis.vertical) {
-                  _lastScrollMetrics = notification.metrics;
-                  _maybeShowComments();
-                }
-                return false;
-              },
-              child: CustomScrollView(
-                controller: _scrollController,
-                slivers: [
-                  // AppBar
-                  TritiumSliverAppBar(
-                    title: const TritiumSectionTitle('专栏文章'),
-                    actions: [
-                      ContentActionsMenu(
-                        title: title.toString(),
-                        url: _articleUrl,
+          body:
+              TritiumRefreshIndicator(
+                onRefresh: _loadData,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    if (notification.metrics.axis == Axis.vertical) {
+                      _lastScrollMetrics = notification.metrics;
+                      _maybeShowComments();
+                    }
+                    return false;
+                  },
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    slivers: [
+                      // AppBar
+                      TritiumSliverAppBar(
+                        title: const TritiumSectionTitle('专栏文章'),
+                        actions: [
+                          ContentActionsMenu(
+                            title: title.toString(),
+                            url: _articleUrl,
+                          ),
+                        ],
                       ),
-                    ],
-                    bottom: _readingSession == null
-                        ? null
-                        : TritiumReadingProgressBar(
-                            progress: _readingSession!.progress,
-                          ),
-                  ),
-                  // 封面图
-                  if (imageUrl.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(11, 8, 11, 0),
-                        child: GestureDetector(
-                          onTap: () => ImageViewer.show(
-                            context,
-                            imageUrl,
-                            imageUrls: _imageUrls,
-                          ),
-                          child: Hero(
-                            tag: imageUrl,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: AspectRatio(
-                                aspectRatio: 5 / 3,
-                                child: CachedNetworkImage(
-                                  imageUrl: imageUrl,
-                                  fit: BoxFit.contain,
-                                  fadeInDuration: const Duration(
-                                    milliseconds: 80,
-                                  ),
-                                  fadeOutDuration: const Duration(
-                                    milliseconds: 80,
-                                  ),
-                                  placeholder: (context, url) => ColoredBox(
-                                    color: colorScheme.surfaceContainerHighest
-                                        .withValues(alpha: 0.35),
-                                  ),
-                                  httpHeaders: const {
-                                    'Referer': 'https://www.zhihu.com/',
-                                  },
-                                  errorWidget: (context, url, error) =>
-                                      ColoredBox(
+                      // 封面图
+                      if (imageUrl.isNotEmpty)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(11, 8, 11, 0),
+                            child: GestureDetector(
+                              onTap: () => ImageViewer.show(
+                                context,
+                                imageUrl,
+                                imageUrls: _imageUrls,
+                              ),
+                              child: Hero(
+                                tag: imageUrl,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: AspectRatio(
+                                    aspectRatio: 5 / 3,
+                                    child: CachedNetworkImage(
+                                      imageUrl: imageUrl,
+                                      fit: BoxFit.contain,
+                                      fadeInDuration: const Duration(
+                                        milliseconds: 80,
+                                      ),
+                                      fadeOutDuration: const Duration(
+                                        milliseconds: 80,
+                                      ),
+                                      placeholder: (context, url) => ColoredBox(
                                         color: colorScheme
                                             .surfaceContainerHighest
-                                            .withValues(alpha: 0.2),
-                                        child: Icon(
-                                          Icons.broken_image_outlined,
-                                          color: colorScheme.onSurfaceVariant,
-                                        ),
+                                            .withValues(alpha: 0.35),
                                       ),
+                                      httpHeaders: const {
+                                        'Referer': 'https://www.zhihu.com/',
+                                      },
+                                      errorWidget: (context, url, error) =>
+                                          ColoredBox(
+                                            color: colorScheme
+                                                .surfaceContainerHighest
+                                                .withValues(alpha: 0.2),
+                                            child: Icon(
+                                              Icons.broken_image_outlined,
+                                              color:
+                                                  colorScheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  // 标题
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(11, 16, 11, 12),
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.onSurface,
-                          height: 1.35,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // 作者信息
-                  SliverToBoxAdapter(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: colorScheme.outlineVariant.withValues(
-                              alpha: 0.3,
+                      // 标题
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(11, 16, 11, 12),
+                          child: Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.onSurface,
+                              height: 1.35,
                             ),
                           ),
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundColor: colorScheme.primaryContainer,
-                            backgroundImage: authorAvatar.isNotEmpty
-                                ? CachedNetworkImageProvider(authorAvatar)
-                                : null,
-                            child: authorAvatar.isEmpty
-                                ? Icon(
-                                    Icons.person,
-                                    color: colorScheme.onPrimaryContainer,
-                                  )
-                                : null,
+                      // 作者信息
+                      SliverToBoxAdapter(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 11,
+                            vertical: 12,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  authorName,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: colorScheme.onSurface,
-                                  ),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: colorScheme.outlineVariant.withValues(
+                                  alpha: 0.3,
                                 ),
-                                if (authorHeadline.isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    authorHeadline,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: colorScheme.onSurfaceVariant,
-                                      height: 1.0,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ],
+                              ),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // 文章内容
-                  ChunkedHtmlSliver(
-                    key: ValueKey(content.hashCode),
-                    content: content,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 11,
-                      vertical: 8,
-                    ),
-                    fontSize: 17,
-                    imageUrls: _imageUrls,
-                    onReady: () {
-                      _contentReady = true;
-                      _readingSession?.contentReady();
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) _maybeShowComments();
-                      });
-                      if (_pendingCommentScroll) _scrollToComments();
-                    },
-                  ),
-                  // 底部间距
-                  // 评论区
-                  SliverToBoxAdapter(child: SizedBox(key: _commentsKey)),
-                  if (_showComments && _articleId != null)
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) => InlineCommentWidget(
-                          resourceId: _articleId!,
-                          resourceType: 'articles',
-                          showHeader: true,
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 20,
+                                backgroundColor: colorScheme.primaryContainer,
+                                backgroundImage: authorAvatar.isNotEmpty
+                                    ? CachedNetworkImageProvider(authorAvatar)
+                                    : null,
+                                child: authorAvatar.isEmpty
+                                    ? Icon(
+                                        Icons.person,
+                                        color: colorScheme.onPrimaryContainer,
+                                      )
+                                    : null,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      authorName,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: colorScheme.onSurface,
+                                      ),
+                                    ),
+                                    if (authorHeadline.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        authorHeadline,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: colorScheme.onSurfaceVariant,
+                                          height: 1.0,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        childCount: 1,
                       ),
-                    ),
+                      // 文章内容
+                      ChunkedHtmlSliver(
+                        key: ValueKey(content.hashCode),
+                        content: content,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 8,
+                        ),
+                        fontSize: 17,
+                        imageUrls: _imageUrls,
+                        onReady: () {
+                          _contentReady = true;
+                          _readingSession?.contentReady();
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) _maybeShowComments();
+                          });
+                          if (_pendingCommentScroll) _scrollToComments();
+                        },
+                      ),
+                      // 底部间距
+                      // 评论区
+                      SliverToBoxAdapter(child: SizedBox(key: _commentsKey)),
+                      if (_showComments && _articleId != null)
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => InlineCommentWidget(
+                              resourceId: _articleId!,
+                              resourceType: 'articles',
+                              showHeader: true,
+                            ),
+                            childCount: 1,
+                          ),
+                        ),
 
-                  // 底部间距
-                  const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                ],
+                      // 底部间距
+                      const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                    ],
+                  ),
+                ),
+              ).withTritiumReadingSession(
+                _readingSession,
+                top:
+                    MediaQuery.paddingOf(context).top +
+                    tritiumMobileToolbarHeight,
               ),
-            ),
-          ),
           // 底部操作栏
           bottomNavigationBar: BlurBottomBar(
             padding: EdgeInsets.only(

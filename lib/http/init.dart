@@ -78,6 +78,26 @@ class Request {
     }
   }
 
+  Future<Response> post(
+    String url, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+    CancelToken? cancelToken,
+  }) async {
+    try {
+      return await dio.post(
+        url,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+        cancelToken: cancelToken,
+      );
+    } on DioException catch (e) {
+      return _handleError(e);
+    }
+  }
+
   /// 错误处理
   Response _handleError(DioException e) {
     String message;

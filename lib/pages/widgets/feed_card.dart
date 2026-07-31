@@ -10,8 +10,9 @@ import '../../services/content_link_service.dart';
 /// Feed 卡片组件
 class FeedCard extends StatelessWidget {
   final Map<String, dynamic> data;
+  final VoidCallback? onContentOpen;
 
-  const FeedCard({super.key, required this.data});
+  const FeedCard({super.key, required this.data, this.onContentOpen});
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +111,8 @@ class FeedCard extends StatelessWidget {
       return _buildGenericCard(context, target, colorScheme);
     }
   }
+
+  void _notifyContentOpen() => onContentOpen?.call();
 
   /// 构建 common_card 格式卡片（Android API 返回格式）
   Widget _buildCommonCardWidget(
@@ -567,16 +570,23 @@ class FeedCard extends StatelessWidget {
     // 构建导航回调
     void Function()? onTap;
     if (contentType == 'answer' && answerId != null) {
-      onTap = () => Get.toNamed(
-        Routes.answer,
-        arguments: {'questionId': questionId, 'answerId': answerId},
-      );
+      onTap = () {
+        _notifyContentOpen();
+        Get.toNamed(
+          Routes.answer,
+          arguments: {'questionId': questionId, 'answerId': answerId},
+        );
+      };
     } else if (contentType == 'article' && articleId != null) {
-      onTap = () =>
-          Get.toNamed(Routes.article, arguments: {'articleId': articleId});
+      onTap = () {
+        _notifyContentOpen();
+        Get.toNamed(Routes.article, arguments: {'articleId': articleId});
+      };
     } else if (contentType == 'question' && questionId != null) {
-      onTap = () =>
-          Get.toNamed(Routes.question, arguments: {'questionId': questionId});
+      onTap = () {
+        _notifyContentOpen();
+        Get.toNamed(Routes.question, arguments: {'questionId': questionId});
+      };
     } else if (contentType == 'pin' && jumpUrl.isNotEmpty) {
       // Pin ID 从 URL 提取
       String? pinId;
@@ -588,13 +598,17 @@ class FeedCard extends StatelessWidget {
         }
       }
       if (pinId != null) {
-        onTap = () => Get.toNamed(Routes.pin, arguments: {'pinId': pinId});
+        onTap = () {
+          _notifyContentOpen();
+          Get.toNamed(Routes.pin, arguments: {'pinId': pinId});
+        };
       }
     }
 
     // 如果没有匹配的导航，使用通用 URL 处理
     onTap ??= () {
       if (jumpUrl.isNotEmpty) {
+        _notifyContentOpen();
         _handleCommonCardTap(jumpUrl);
       }
     };
@@ -672,10 +686,13 @@ class FeedCard extends StatelessWidget {
 
     return Card(
       child: InkWell(
-        onTap: () => Get.toNamed(
-          Routes.answer,
-          arguments: {'questionId': questionId, 'answerId': answerId},
-        ),
+        onTap: () {
+          _notifyContentOpen();
+          Get.toNamed(
+            Routes.answer,
+            arguments: {'questionId': questionId, 'answerId': answerId},
+          );
+        },
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -807,8 +824,10 @@ class FeedCard extends StatelessWidget {
 
     return Card(
       child: InkWell(
-        onTap: () =>
-            Get.toNamed(Routes.article, arguments: {'articleId': articleId}),
+        onTap: () {
+          _notifyContentOpen();
+          Get.toNamed(Routes.article, arguments: {'articleId': articleId});
+        },
         borderRadius: BorderRadius.circular(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -940,10 +959,12 @@ class FeedCard extends StatelessWidget {
         onTap: () {
           final url = target['url']?.toString() ?? '';
           if (url.isNotEmpty) {
+            _notifyContentOpen();
             _handleCommonCardTap(url);
           } else {
             final videoId = target['id']?.toString();
             if (videoId != null && videoId.isNotEmpty) {
+              _notifyContentOpen();
               ContentLinkService.open('https://www.zhihu.com/zvideo/$videoId');
             }
           }
@@ -1064,6 +1085,7 @@ class FeedCard extends StatelessWidget {
         onTap: () {
           final url = target['url']?.toString() ?? '';
           if (url.isNotEmpty) {
+            _notifyContentOpen();
             _handleCommonCardTap(url);
           }
         },

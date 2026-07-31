@@ -49,6 +49,7 @@ class _AnswerPageState extends State<AnswerPage> {
   List<String> _answerIds = [];
   late final PageController _pageController;
   final Map<String, GlobalKey> _commentKeys = {};
+  final Map<String, GlobalKey<_AnswerSinglePageState>> _answerPageKeys = {};
   final Set<String> _contentReadyAnswerIds = {};
   String? _pendingCommentAnswerId;
 
@@ -62,6 +63,7 @@ class _AnswerPageState extends State<AnswerPage> {
   late final ValueNotifier<dynamic> _commentCountNotifier;
   late final ValueNotifier<int> _settledPageIndexNotifier;
   final ValueNotifier<double> _readingProgressNotifier = ValueNotifier(0);
+  final ValueNotifier<bool> _readingSeekableNotifier = ValueNotifier(false);
   int _loadGeneration = 0;
 
   @override
@@ -123,6 +125,7 @@ class _AnswerPageState extends State<AnswerPage> {
     _commentCountNotifier.dispose();
     _settledPageIndexNotifier.dispose();
     _readingProgressNotifier.dispose();
+    _readingSeekableNotifier.dispose();
     super.dispose();
   }
 
@@ -281,62 +284,79 @@ class _AnswerPageState extends State<AnswerPage> {
             ),
           ),
         ],
-        bottom: TritiumReadingProgressBar(progress: _readingProgressNotifier),
       ),
-      body: NotificationListener<ScrollEndNotification>(
-        onNotification: _handlePageScrollEnd,
-        child: PageView.builder(
-          controller: _pageController,
-          allowImplicitScrolling: true,
-          itemCount: _answerIds.length,
-          onPageChanged: _onPageChanged,
-          itemBuilder: (context, index) {
-            final answerId = _answerIds[index];
-            final commentKey = _commentKeys.putIfAbsent(
-              answerId,
-              GlobalKey.new,
-            );
-            return _AnswerSinglePage(
-              key: ValueKey(answerId),
-              answerId: answerId,
-              questionId: _questionId,
-              commentsKey: commentKey,
-              pageIndex: index,
-              settledPageIndexListenable: _settledPageIndexNotifier,
-              initialData: AnswerHttp.cache.containsKey(answerId)
-                  ? AnswerHttp.cache[answerId]
-                  : null,
-              onQuestionIdLoaded: (qId) {
-                if (_questionId == null && qId.isNotEmpty) {
-                  _questionId = qId;
-                  _fetchQuestionAnswers();
-                }
-              },
-              onDataLoaded: (data) {
-                if (!_hasPendingPageTransition &&
-                    _answerIds[_currentIndex] == answerId) {
-                  _syncChromeForCurrentAnswer(data);
-                }
-              },
-              onTitleVisibilityChanged: (visible) {
-                if (_settledPageIndexNotifier.value == index &&
-                    _showTitleNotifier.value != visible) {
-                  _showTitleNotifier.value = visible;
-                }
-              },
-              onContentReady: () {
-                _contentReadyAnswerIds.add(answerId);
-                if (_pendingCommentAnswerId == answerId) {
-                  _scrollToComments(answerId);
-                }
-              },
-              onReadingProgressChanged: (progress) {
-                if (_settledPageIndexNotifier.value == index) {
-                  _readingProgressNotifier.value = progress;
-                }
-              },
-            );
-          },
+      body: TritiumReadingProgressOverlay(
+        progress: _readingProgressNotifier,
+        seekable: _readingSeekableNotifier,
+        onSeek: (progress) {
+          if (_answerIds.isEmpty) return;
+          _answerPageKeys[_answerIds[_currentIndex]]?.currentState
+              ?.seekToProgress(progress);
+        },
+        child: NotificationListener<ScrollEndNotification>(
+          onNotification: _handlePageScrollEnd,
+          child: PageView.builder(
+            controller: _pageController,
+            allowImplicitScrolling: true,
+            itemCount: _answerIds.length,
+            onPageChanged: _onPageChanged,
+            itemBuilder: (context, index) {
+              final answerId = _answerIds[index];
+              final commentKey = _commentKeys.putIfAbsent(
+                answerId,
+                GlobalKey.new,
+              );
+              final answerPageKey = _answerPageKeys.putIfAbsent(
+                answerId,
+                GlobalKey<_AnswerSinglePageState>.new,
+              );
+              return _AnswerSinglePage(
+                key: answerPageKey,
+                answerId: answerId,
+                questionId: _questionId,
+                commentsKey: commentKey,
+                pageIndex: index,
+                settledPageIndexListenable: _settledPageIndexNotifier,
+                initialData: AnswerHttp.cache.containsKey(answerId)
+                    ? AnswerHttp.cache[answerId]
+                    : null,
+                onQuestionIdLoaded: (qId) {
+                  if (_questionId == null && qId.isNotEmpty) {
+                    _questionId = qId;
+                    _fetchQuestionAnswers();
+                  }
+                },
+                onDataLoaded: (data) {
+                  if (!_hasPendingPageTransition &&
+                      _answerIds[_currentIndex] == answerId) {
+                    _syncChromeForCurrentAnswer(data);
+                  }
+                },
+                onTitleVisibilityChanged: (visible) {
+                  if (_settledPageIndexNotifier.value == index &&
+                      _showTitleNotifier.value != visible) {
+                    _showTitleNotifier.value = visible;
+                  }
+                },
+                onContentReady: () {
+                  _contentReadyAnswerIds.add(answerId);
+                  if (_pendingCommentAnswerId == answerId) {
+                    _scrollToComments(answerId);
+                  }
+                },
+                onReadingProgressChanged: (progress) {
+                  if (_settledPageIndexNotifier.value == index) {
+                    _readingProgressNotifier.value = progress;
+                  }
+                },
+                onReadingSeekableChanged: (seekable) {
+                  if (_settledPageIndexNotifier.value == index) {
+                    _readingSeekableNotifier.value = seekable;
+                  }
+                },
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: BlurBottomBar(
@@ -412,6 +432,7 @@ class _AnswerSinglePage extends StatefulWidget {
   final int pageIndex;
   final ValueListenable<int> settledPageIndexListenable;
   final ValueChanged<double> onReadingProgressChanged;
+  final ValueChanged<bool> onReadingSeekableChanged;
 
   const _AnswerSinglePage({
     super.key,
@@ -426,6 +447,7 @@ class _AnswerSinglePage extends StatefulWidget {
     required this.pageIndex,
     required this.settledPageIndexListenable,
     required this.onReadingProgressChanged,
+    required this.onReadingSeekableChanged,
   });
 
   @override
@@ -466,6 +488,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
       bodyEndKey: widget.commentsKey,
     );
     _readingSession.progress.addListener(_notifyReadingProgress);
+    _readingSession.seekable.addListener(_notifyReadingSeekable);
 
     if (widget.initialData != null) {
       _answerData = widget.initialData;
@@ -520,6 +543,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
   void dispose() {
     _loadGeneration++;
     _readingSession.progress.removeListener(_notifyReadingProgress);
+    _readingSession.seekable.removeListener(_notifyReadingSeekable);
     _readingSession.dispose();
     _scrollController.dispose();
     widget.settledPageIndexListenable.removeListener(_onSettledPageChanged);
@@ -531,6 +555,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
     if (widget.settledPageIndexListenable.value == widget.pageIndex) {
       widget.onTitleVisibilityChanged(_titleIsCovered);
       widget.onReadingProgressChanged(_readingSession.progress.value);
+      widget.onReadingSeekableChanged(_readingSession.seekable.value);
       if (_answerData != null) _recordHistory(_answerData!);
     }
     _scheduleTitleVisibilityUpdate();
@@ -540,6 +565,16 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
     if (widget.settledPageIndexListenable.value == widget.pageIndex) {
       widget.onReadingProgressChanged(_readingSession.progress.value);
     }
+  }
+
+  void _notifyReadingSeekable() {
+    if (widget.settledPageIndexListenable.value == widget.pageIndex) {
+      widget.onReadingSeekableChanged(_readingSession.seekable.value);
+    }
+  }
+
+  void seekToProgress(double progress) {
+    _readingSession.seekToProgress(progress);
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {

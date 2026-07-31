@@ -4,31 +4,231 @@ import 'package:flutter/rendering.dart';
 
 import '../../services/reading_history_service.dart';
 
-class TritiumReadingProgressBar extends StatelessWidget {
+class TritiumReadingProgressBar extends StatefulWidget {
   final ValueListenable<double> progress;
+  final ValueListenable<bool>? seekable;
+  final ValueChanged<double>? onSeek;
 
-  const TritiumReadingProgressBar({super.key, required this.progress});
+  const TritiumReadingProgressBar({
+    super.key,
+    required this.progress,
+    this.seekable,
+    this.onSeek,
+  });
+
+  @override
+  State<TritiumReadingProgressBar> createState() =>
+      _TritiumReadingProgressBarState();
+}
+
+class _TritiumReadingProgressBarState extends State<TritiumReadingProgressBar> {
+  bool _dragging = false;
+  double? _dragProgress;
+
+  void _seek(DragUpdateDetails details, double width) {
+    if (width <= 0) return;
+    final next = (details.localPosition.dx / width).clamp(0.0, 1.0);
+    setState(() => _dragProgress = next);
+    widget.onSeek?.call(next);
+  }
+
+  void _startSeek(DragStartDetails details, double width) {
+    if (width <= 0) return;
+    final next = (details.localPosition.dx / width).clamp(0.0, 1.0);
+    setState(() {
+      _dragging = true;
+      _dragProgress = next;
+    });
+    widget.onSeek?.call(next);
+  }
+
+  void _finishSeek() {
+    if (!_dragging) return;
+    setState(() {
+      _dragging = false;
+      _dragProgress = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 1,
-      width: double.infinity,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ColoredBox(color: colors.outlineVariant.withValues(alpha: 0.30)),
-          ValueListenableBuilder<double>(
-            valueListenable: progress,
-            builder: (context, value, child) => FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: value.clamp(0.0, 1.0),
-              child: ColoredBox(color: colors.primary),
+    return ValueListenableBuilder<double>(
+      valueListenable: widget.progress,
+      builder: (context, progress, child) {
+        final seekable = widget.seekable;
+        if (seekable == null) {
+          return _buildBar(
+            context,
+            colors,
+            progress: progress,
+            canSeek: widget.onSeek != null,
+          );
+        }
+        return ValueListenableBuilder<bool>(
+          valueListenable: seekable,
+          builder: (context, canSeek, child) => _buildBar(
+            context,
+            colors,
+            progress: progress,
+            canSeek: canSeek && widget.onSeek != null,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBar(
+    BuildContext context,
+    ColorScheme colors, {
+    required double progress,
+    required bool canSeek,
+  }) {
+    final displayedProgress = (_dragProgress ?? progress).clamp(0.0, 1.0);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final labelLeft = width.isFinite
+            ? (displayedProgress * width - 22).clamp(
+                0.0,
+                (width - 44).clamp(0.0, double.infinity),
+              )
+            : 0.0;
+        return Semantics(
+          label: '正文阅读进度',
+          value: '${(displayedProgress * 100).round()}%',
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: canSeek
+                ? (details) => _startSeek(details, width)
+                : null,
+            onHorizontalDragUpdate: canSeek
+                ? (details) => _seek(details, width)
+                : null,
+            onHorizontalDragEnd: canSeek ? (_) => _finishSeek() : null,
+            onHorizontalDragCancel: canSeek ? _finishSeek : null,
+            child: SizedBox(
+              height: 24,
+              width: double.infinity,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: _dragging ? 3 : 1,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ColoredBox(
+                          color: colors.outlineVariant.withValues(alpha: 0.30),
+                        ),
+                        FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: displayedProgress,
+                          child: ColoredBox(color: colors.primary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_dragging)
+                    Positioned(
+                      top: 5,
+                      left: labelLeft,
+                      width: 44,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colors.inverseSurface.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Text(
+                            '${(displayedProgress * 100).round()}%',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: colors.onInverseSurface,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
+        );
+      },
+    );
+  }
+}
+
+/// Keeps the one-pixel reading indicator visually attached to the app bar
+/// while providing a practical, invisible horizontal drag target below it.
+class TritiumReadingProgressOverlay extends StatelessWidget {
+  final Widget child;
+  final ValueListenable<double> progress;
+  final ValueListenable<bool> seekable;
+  final ValueChanged<double> onSeek;
+  final double top;
+
+  const TritiumReadingProgressOverlay({
+    super.key,
+    required this.child,
+    required this.progress,
+    required this.seekable,
+    required this.onSeek,
+    this.top = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        child,
+        Positioned(
+          top: top,
+          left: 0,
+          right: 0,
+          height: 24,
+          child: TritiumReadingProgressBar(
+            progress: progress,
+            seekable: seekable,
+            onSeek: onSeek,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+extension TritiumReadingProgressWidget on Widget {
+  Widget withTritiumReadingProgress({
+    required ValueListenable<double> progress,
+    required ValueListenable<bool> seekable,
+    required ValueChanged<double> onSeek,
+    double top = 0,
+  }) {
+    return TritiumReadingProgressOverlay(
+      progress: progress,
+      seekable: seekable,
+      onSeek: onSeek,
+      top: top,
+      child: this,
+    );
+  }
+
+  Widget withTritiumReadingSession(ReadingSession? session, {double top = 0}) {
+    if (session == null) return this;
+    return withTritiumReadingProgress(
+      progress: session.progress,
+      seekable: session.seekable,
+      onSeek: session.seekToProgress,
+      top: top,
     );
   }
 }
@@ -42,6 +242,7 @@ class ReadingSession {
   final ScrollController scrollController;
   final GlobalKey bodyEndKey;
   final ValueNotifier<double> progress;
+  final ValueNotifier<bool> seekable;
 
   bool _restoreRequested = false;
   bool _disposed = false;
@@ -54,7 +255,9 @@ class ReadingSession {
     required this.scrollController,
     required this.bodyEndKey,
     ValueNotifier<double>? progress,
-  }) : progress = progress ?? ValueNotifier<double>(0) {
+    ValueNotifier<bool>? seekable,
+  }) : progress = progress ?? ValueNotifier<double>(0),
+       seekable = seekable ?? ValueNotifier<bool>(false) {
     scrollController.addListener(_handleScroll);
   }
 
@@ -104,6 +307,8 @@ class ReadingSession {
     if (bodyEnd == null || !scrollController.hasClients) return;
     final position = scrollController.position;
     final travel = bodyEnd - position.minScrollExtent;
+    final canSeek = travel > precisionErrorTolerance;
+    if (seekable.value != canSeek) seekable.value = canSeek;
     final next = travel <= precisionErrorTolerance
         ? 1.0
         : ((scrollController.offset - position.minScrollExtent) / travel).clamp(
@@ -111,6 +316,20 @@ class ReadingSession {
             1.0,
           );
     if ((progress.value - next).abs() >= 0.0005) progress.value = next;
+  }
+
+  void seekToProgress(double value) {
+    if (_disposed || !scrollController.hasClients) return;
+    final bodyEnd = _bodyEndScrollOffset();
+    if (bodyEnd == null) return;
+    final position = scrollController.position;
+    final travel = bodyEnd - position.minScrollExtent;
+    if (travel <= precisionErrorTolerance) return;
+    final target = position.minScrollExtent + travel * value.clamp(0.0, 1.0);
+    scrollController.jumpTo(
+      target.clamp(position.minScrollExtent, position.maxScrollExtent),
+    );
+    _updateProgress();
   }
 
   void _restore() {
@@ -140,6 +359,9 @@ class ReadingSession {
     _disposed = true;
     scrollController.removeListener(_handleScroll);
     ReadingHistoryService.saveProgress(kind, id, progress.value);
-    if (disposeProgress) progress.dispose();
+    if (disposeProgress) {
+      progress.dispose();
+      seekable.dispose();
+    }
   }
 }
