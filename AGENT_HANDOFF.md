@@ -34,6 +34,9 @@
   已完整位于视口内时直接为 100%，评论长度不参与计算。
 - 根评论中的缩略跟评使用 `CompactHtmlPreview`：直接解析知乎表情，过滤普通附件，
   且不让链接接管“打开楼中楼”的整体点击行为。
+- 内联评论自动分页必须监听最近的祖先纵向 `ScrollPosition`，用哨兵绝对 offset、
+  当前 pixels 和实际 viewportDimension 计算距离；不要改回收不到父滚动事件的后代
+  `NotificationListener`，也不要移除重复游标/空页停止保护。
 - 不在日志、文档或仓库中记录 Cookie、签名参数、完整登录 URL 或密钥。
 - 除非用户明确要求发布版本，否则不要创建 tag 或 GitHub Release；用户说“触发打包”
   即表示按 Auto Folo 流程创建版本提交、annotated tag 并发布 GitHub Release。

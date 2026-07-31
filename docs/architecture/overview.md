@@ -16,6 +16,17 @@ Tritium 采用按页面模块组织的轻量 Flutter 架构。当前体量下不
 加载更多失败。分页统一通过 `PagingInfo` 解析；请求期间必须有并发锁，页面销毁或
 刷新后必须忽略旧请求结果。已有内容刷新失败时保留旧内容并给出轻提示。
 
+列表加载更多以自动加载为默认行为：独立列表（推荐流）监听自身滚动 `extentAfter`；
+内联评论通过 `Scrollable.maybeOf(context, axis: Axis.vertical)` 订阅最近的祖先
+`ScrollPosition`，并用尾部哨兵的绝对 reveal offset、当前 `pixels` 与
+`viewportDimension` 计算它到视口下边缘的距离。不要在评论组件内部用
+`NotificationListener` 监听外层滚动——通知只向祖先冒泡，后代监听器收不到事件；
+也不要把 `getOffsetToReveal().offset` 误当成屏幕坐标。触发后保留可点击兜底，失败
+退化为可重试状态，成功、重新排序和首屏重载必须清理旧错误。
+
+自动分页必须锁定并捕获本次请求的 `nextUrl`，成功后按评论 ID 去重；空页、重复游标
+或已经消费的游标视为无进展并停止自动请求，避免逐帧重复拉取同一页。
+
 ## 状态约定
 
 应用级状态由 Service 管理，页面级状态留在页面或对应 GetX Controller 中。不要把

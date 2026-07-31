@@ -425,15 +425,16 @@ class TritiumGlassSheet extends StatelessWidget {
         borderRadius: BorderRadius.circular(32),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: colors.surface.withValues(alpha: 0.90),
+          child: Material(
+            color: colors.surface.withValues(alpha: 0.90),
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(32),
-              border: Border.all(
+              side: BorderSide(
                 color: colors.outlineVariant.withValues(alpha: 0.42),
                 width: 0.8,
               ),
             ),
+            clipBehavior: Clip.antiAlias,
             child: child,
           ),
         ),

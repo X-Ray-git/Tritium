@@ -1,11 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../http/comment_http.dart';
 import '../../http/init.dart';
 import '../../models/common/paging_info.dart';
+import '../../utils/comment_auto_load.dart';
 import '../../utils/storage.dart';
 import 'app_chrome.dart';
 import 'unified_comment_item.dart';
+
+typedef CommentPageLoader =
+    Future<LoadingState<Map<String, dynamic>>> Function({
+      required String resourceId,
+      required String resourceType,
+      required String orderBy,
+      String? nextUrl,
+    });
 
 /// 内联评论组件
 ///
@@ -24,12 +34,16 @@ class InlineCommentWidget extends StatefulWidget {
   /// 是否显示标题
   final bool showHeader;
 
+  /// 仅用于替换数据来源或测试；生产环境默认调用 [CommentHttp.getRootComments]。
+  final CommentPageLoader? pageLoader;
+
   const InlineCommentWidget({
     super.key,
     required this.resourceId,
     required this.resourceType,
     this.initialCount = 10,
     this.showHeader = true,
+    this.pageLoader,
   });
 
   @override
@@ -47,6 +61,15 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget>
   late String _orderBy;
   int _loadGeneration = 0;
 
+  /// 加载更多失败时保留错误信息，尾部展示可点击重试；成功后清空。
+  String? _loadMoreError;
+
+  /// 哨兵：用于判断“加载更多”入口是否已进入预加载范围。
+  final GlobalKey _loadMoreKey = GlobalKey();
+  final Set<String> _consumedPageUrls = {};
+  ScrollPosition? _scrollPosition;
+  bool _autoLoadArmed = false;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -58,34 +81,50 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextPosition = Scrollable.maybeOf(
+      context,
+      axis: Axis.vertical,
+    )?.position;
+    if (identical(nextPosition, _scrollPosition)) return;
+    _scrollPosition?.removeListener(_handleParentScroll);
+    _scrollPosition = nextPosition;
+    _scrollPosition?.addListener(_handleParentScroll);
+    _scheduleAutoLoadCheck();
+  }
+
+  @override
   void dispose() {
     _loadGeneration++;
+    _scrollPosition?.removeListener(_handleParentScroll);
     super.dispose();
   }
 
   Future<void> _loadData({bool loadMore = false}) async {
     if (_isLoading && loadMore) return;
+    final requestedNextUrl = loadMore ? _nextUrl : null;
+    if (loadMore && requestedNextUrl == null) return;
+    if (requestedNextUrl != null &&
+        _consumedPageUrls.contains(requestedNextUrl)) {
+      setState(() => _nextUrl = null);
+      return;
+    }
     final generation = loadMore ? _loadGeneration : ++_loadGeneration;
 
     setState(() {
       _isLoading = true;
       _hasError = false;
+      if (!loadMore) _loadMoreError = null;
     });
 
-    dynamic result;
-    if (loadMore && _nextUrl != null) {
-      result = await CommentHttp.getRootComments(
-        resourceId: widget.resourceId,
-        resourceType: widget.resourceType,
-        nextUrl: _nextUrl,
-      );
-    } else {
-      result = await CommentHttp.getRootComments(
-        resourceId: widget.resourceId,
-        resourceType: widget.resourceType,
-        orderBy: _orderBy,
-      );
-    }
+    final loader = widget.pageLoader ?? CommentHttp.getRootComments;
+    final result = await loader(
+      resourceId: widget.resourceId,
+      resourceType: widget.resourceType,
+      orderBy: _orderBy,
+      nextUrl: requestedNextUrl,
+    );
 
     if (!mounted || generation != _loadGeneration) return;
 
@@ -95,32 +134,47 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget>
       final counts = data['counts'] as Map<String, dynamic>?;
       final commonCounts = data['common_counts'] as Map<String, dynamic>?;
 
-      _nextUrl = paging.nextUrl;
-
       if (!loadMore) {
         _totalCount =
             counts?['total_counts'] ?? commonCounts?['total_counts'] ?? 0;
         _comments.clear();
+        _consumedPageUrls.clear();
+      } else {
+        _consumedPageUrls.add(requestedNextUrl!);
       }
 
       final List<dynamic> newComments = data['data'] ?? [];
-      _comments.addAll(newComments);
+      final addedCount = _appendUniqueComments(newComments);
+      final candidateNextUrl = paging.nextUrl;
+      final madeProgress = !loadMore || addedCount > 0;
+      _nextUrl =
+          madeProgress &&
+              candidateNextUrl != null &&
+              candidateNextUrl != requestedNextUrl &&
+              !_consumedPageUrls.contains(candidateNextUrl)
+          ? candidateNextUrl
+          : null;
 
       setState(() {
         _isLoading = false;
+        _loadMoreError = null;
       });
-    } else if (result is Error) {
+    } else if (result is Error<Map<String, dynamic>>) {
       final message = result.errMsg;
       setState(() {
         _isLoading = false;
-        _hasError = _comments.isEmpty;
+        _hasError = !loadMore && _comments.isEmpty;
         _errorMsg = message;
+        if (loadMore) _loadMoreError = message;
       });
-      if (_comments.isNotEmpty) {
+      if (!loadMore && _comments.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
         );
       }
+    }
+    if (result is Success<Map<String, dynamic>>) {
+      _scheduleAutoLoadCheck();
     }
   }
 
@@ -190,13 +244,82 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget>
         else
           ..._buildCommentList(),
 
-        // 加载更多
-        if (_nextUrl != null && !_isLoading) _buildLoadMoreButton(),
+        // 加载更多（自动加载为主，保留可点击兜底）
+        if (_nextUrl != null ||
+            _loadMoreError != null ||
+            _isLoading && _comments.isNotEmpty)
+          _buildLoadMoreTail(),
 
         // 底部间距
         const SizedBox(height: 20),
       ],
     );
+  }
+
+  void _handleParentScroll() => _maybeAutoLoad();
+
+  void _scheduleAutoLoadCheck() {
+    if (!mounted || _autoLoadArmed) return;
+    _autoLoadArmed = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoLoadArmed = false;
+      if (mounted) _maybeAutoLoad();
+    });
+  }
+
+  /// 评估“加载更多”哨兵是否进入预加载范围，是则自动拉取下一页。
+  void _maybeAutoLoad() {
+    if (_isLoading || _nextUrl == null || _loadMoreError != null) return;
+    final position = _scrollPosition;
+    if (!mounted ||
+        position == null ||
+        !position.hasPixels ||
+        !position.hasViewportDimension) {
+      return;
+    }
+    final sentinelScrollOffset = _sentinelScrollOffset();
+    if (sentinelScrollOffset == null) return;
+    if (!shouldAutoLoadMore(
+      sentinelScrollOffset: sentinelScrollOffset,
+      scrollOffset: position.pixels,
+      viewportDimension: position.viewportDimension,
+    )) {
+      return;
+    }
+    _loadData(loadMore: true);
+  }
+
+  /// 计算让哨兵对齐视口顶部所需的绝对滚动位置。
+  double? _sentinelScrollOffset() {
+    final ctx = _loadMoreKey.currentContext;
+    if (ctx == null) return null;
+    final renderObject = ctx.findRenderObject();
+    if (renderObject is! RenderBox ||
+        !renderObject.hasSize ||
+        !renderObject.attached) {
+      return null;
+    }
+    final viewport = RenderAbstractViewport.maybeOf(renderObject);
+    if (viewport == null) return null;
+    return viewport.getOffsetToReveal(renderObject, 0.0).offset;
+  }
+
+  int _appendUniqueComments(List<dynamic> newComments) {
+    final knownIds = _comments.map(_commentId).whereType<String>().toSet();
+    var addedCount = 0;
+    for (final comment in newComments) {
+      final id = _commentId(comment);
+      if (id != null && !knownIds.add(id)) continue;
+      _comments.add(comment);
+      addedCount++;
+    }
+    return addedCount;
+  }
+
+  String? _commentId(dynamic comment) {
+    if (comment is! Map) return null;
+    final value = comment['id']?.toString().trim();
+    return value == null || value.isEmpty ? null : value;
   }
 
   void _showSortOptions() {
@@ -292,10 +415,59 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget>
     }).toList();
   }
 
-  Widget _buildLoadMoreButton() {
+  /// 尾部加载入口：自动加载触发时显示 loading；失败后退化为可点击重试；
+  /// 正常空闲态保留"查看更多评论"作为兜底与可访问入口，并作为自动加载的哨兵。
+  Widget _buildLoadMoreTail() {
     final colorScheme = Theme.of(context).colorScheme;
 
+    // 加载更多失败：展示可点击重试。
+    if (_loadMoreError != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: InkWell(
+          onTap: () {
+            setState(() => _loadMoreError = null);
+            _loadData(loadMore: true);
+          },
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: Text(
+                '加载失败，点击重试',
+                style: TextStyle(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 正在加载下一页：展示转圈。
+    if (_isLoading && _comments.isNotEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 1.5),
+          ),
+        ),
+      );
+    }
+
+    // 空闲态：既是兜底可点击入口，也是自动加载的几何哨兵。
     return Padding(
+      key: _loadMoreKey,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: InkWell(
         onTap: () => _loadData(loadMore: true),

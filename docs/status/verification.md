@@ -74,3 +74,22 @@
   滚动；评论高度变化不改变中途进度；正文初始已完整位于视口内时直接为 100%。
 - `flutter build apk --debug`：通过。
 - 长短正文的实际 AppBar 视觉与保存位置恢复仍保留在真机验收清单中。
+
+## 2026-07-31：评论区自动加载下一页
+
+- 背景：评论组件内联嵌在外层滚动视图里，原尾部固定“查看更多评论”按钮需手动点击。
+- 审查否决了“后代 `NotificationListener` + 把 reveal offset 当屏幕坐标”的初版：
+  它收不到父滚动事件，且在长正文中使用错误坐标，详见[决策日志](../history/decisions.md)
+  2026-07-31 条目。
+- `dart analyze`：通过，无诊断。
+- `flutter test test/comment_auto_load_test.dart`：7 项通过。
+- `flutter test`：44 项通过。新增覆盖同一滚动坐标系的纯几何判断、长正文真实父
+  `CustomScrollView` 滚动触发、短内容自动补页、重复游标停止，以及加载更多失败后
+  成功切换排序清理错误。排序测试同时覆盖玻璃弹层必须用 `Material` 承载 ListTile
+  ink 的回归。
+- `flutter build apk --debug`：通过。
+- 核心改动：`inline_comment_widget.dart` 使用祖先纵向 `ScrollPosition`、哨兵和
+  三态尾部；`comment_auto_load.dart` 统一几何公式；`app_chrome.dart` 修正弹层
+  Material 层级；`comment_auto_load_test.dart` 提供真实滚动与状态回归。
+- 仍需真机确认固定预加载距离在不同屏幕、长短正文和连续多页真实接口中的手感，
+  已记录在[待办](pending.md)与[真机验收清单](device-acceptance.md)。
