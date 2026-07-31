@@ -16,3 +16,9 @@
 ```bash
 ./scripts/release.sh 0.2.1 -m $'- feat: å¯¹é½\220å\217ªè¯»å¯¼è\210ªã\200\201æ\255£æ\226\207æ¸²æ\237\223ã\200\201å\233\236ç\255\224æ¨ªæ»\221ä¸\216å\233¾ç\211\207æµ\217è§\210ä½\223éª\214\n- fix: ä¿®å¤\215ä¸\213æ\213\211å\210·æ\226°ã\200\201è¯\204è®ºé¢\204å\212 è½½ã\200\201é\230\205è¯»é¡µæ \207é¢\230æ\212\226å\212¨ä¸\216è®¾ç½®é¡µå®\211å\205¨è·\235ç¦»\n- fix: æ\201¢å¤\215å·²éª\214è¯\201å\217¯ç\224¨ç\232\204 GitHub Actions Java å\217\221å¸\203ç\216¯å¢\203\n- chore: å¯¹é½\220 Auto Folo ç\232\204æ\226\207æ¡£ç»´æ\212¤ä¸\216ç\255¾å\220\215 Release æµ\201ç¨\213'
 ```
+
+## v0.3.0
+
+```bash
+./scripts/release.sh 0.3.0 -m $'- feat: add session-scoped recommendation de-duplication and verified feedback\n- feat: add draggable body reading progress for articles, answers and pins\n- test: cover recommendation refresh, feedback batching and progress seeking' --push
+```
