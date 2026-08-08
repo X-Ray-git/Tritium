@@ -115,7 +115,9 @@ class UnifiedCommentItem extends StatelessWidget {
                   style: TextStyle(fontSize: 11, color: colors.outline),
                 ),
                 const SizedBox(height: 6),
-                CustomHtml(content: content, fontSize: 15),
+                SelectionArea(
+                  child: CustomHtml(content: content, fontSize: 15),
+                ),
                 if (voteCount > 0 || childCommentCount > 0) ...[
                   const SizedBox(height: 8),
                   Wrap(

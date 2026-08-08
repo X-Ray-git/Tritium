@@ -7,6 +7,7 @@ import '../../models/common/paging_info.dart';
 import '../../utils/comment_auto_load.dart';
 import '../../utils/storage.dart';
 import 'app_chrome.dart';
+import 'feedback_toast.dart';
 import 'unified_comment_item.dart';
 
 typedef CommentPageLoader =
@@ -168,9 +169,7 @@ class _InlineCommentWidgetState extends State<InlineCommentWidget>
         if (loadMore) _loadMoreError = message;
       });
       if (!loadMore && _comments.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-        );
+        TritiumFeedback.error('评论加载失败', message);
       }
     }
     if (result is Success<Map<String, dynamic>>) {

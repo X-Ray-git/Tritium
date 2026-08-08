@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:get/get.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'feedback_toast.dart';
 
 enum _ContentAction { share, copy, browser }
 
@@ -50,18 +51,30 @@ class ContentActionsMenu extends StatelessWidget {
   Future<void> _handle(_ContentAction action) async {
     switch (action) {
       case _ContentAction.share:
-        await Share.share(url, subject: title);
+        try {
+          await Share.share(url, subject: title);
+        } catch (_) {
+          TritiumFeedback.error('分享失败', '系统未能打开分享面板');
+        }
         return;
       case _ContentAction.copy:
-        await Clipboard.setData(ClipboardData(text: url));
-        Get.snackbar('已复制', '链接已复制到剪贴板');
+        try {
+          await Clipboard.setData(ClipboardData(text: url));
+          TritiumFeedback.success('已复制', '链接已复制到剪贴板');
+        } catch (_) {
+          TritiumFeedback.error('复制失败', '无法写入剪贴板');
+        }
         return;
       case _ContentAction.browser:
         final uri = Uri.tryParse(url);
-        final opened =
-            uri != null &&
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-        if (!opened) Get.snackbar('无法打开', '未找到可用的浏览器');
+        try {
+          final opened =
+              uri != null &&
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+          if (!opened) TritiumFeedback.warning('无法打开', '未找到可用的浏览器');
+        } catch (_) {
+          TritiumFeedback.warning('无法打开', '系统未能启动浏览器');
+        }
         return;
     }
   }

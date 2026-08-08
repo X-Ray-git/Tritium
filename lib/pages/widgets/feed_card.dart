@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -6,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../router/app_pages.dart';
 import '../../http/content_http.dart'; // For AnswerHttp.preload
 import '../../services/content_link_service.dart';
+import '../../utils/count_format.dart';
 
 /// Feed 卡片组件
 class FeedCard extends StatelessWidget {
@@ -67,8 +69,13 @@ class FeedCard extends StatelessWidget {
     }
 
     if (target == null) {
-      // 调试: 打印数据结构
-      // debugPrint('FeedCard: No target found, data keys: ${data.keys.toList()}');
+      // Debug 模式记录无法识别的卡片类型与关键字段，便于后续补齐。
+      if (kDebugMode) {
+        debugPrint(
+          'FeedCard: 无法识别的 feed envelope: type=${data['feed_type'] ?? data['type']}, '
+          'keys=${data.keys.take(8).toList()}',
+        );
+      }
       return const SizedBox.shrink();
     }
 
@@ -104,9 +111,9 @@ class FeedCard extends StatelessWidget {
     } else if (type == 'zvideo' || targetType == 'zvideo') {
       return _buildVideoCard(context, target, colorScheme);
     } else {
-      // 通用卡片 - 检查是否有问题数据
-      if (target['question'] != null || target['title'] != null) {
-        return _buildAnswerCard(context, target, colorScheme);
+      // 未知卡片不猜测成回答或文章：只展示内容，导航交给可验证的跳转 URL。
+      if (kDebugMode && type.isNotEmpty) {
+        debugPrint('FeedCard: 未知卡片类型 type=$type');
       }
       return _buildGenericCard(context, target, colorScheme);
     }
@@ -142,12 +149,13 @@ class FeedCard extends StatelessWidget {
     String excerpt = '';
     String? imageUrl;
     String jumpUrl = '';
-    int voteupCount = 0;
-    int commentCount = 0;
+    int? voteupCount;
+    int? commentCount;
     String contentType = '';
     String? questionId;
     String? answerId;
     String? articleId;
+    String? pinIdFromUrl;
 
     bool parsedFromBrief = false;
 
@@ -194,8 +202,9 @@ class FeedCard extends StatelessWidget {
 
         // 获取统计数据
         voteupCount =
-            target['voteup_count'] as int? ?? target['vote_count'] as int? ?? 0;
-        commentCount = target['comment_count'] as int? ?? 0;
+            parseCount(target['voteup_count']) ??
+            parseCount(target['vote_count']);
+        commentCount = parseCount(target['comment_count']);
 
         // debugPrint('FeedCard brief success: type=$contentType, title=$title');
       }
@@ -314,7 +323,7 @@ class FeedCard extends StatelessWidget {
           }
         }
       }
-      return _formatCount(voteupCount);
+      return formatCount(voteupCount);
     }
 
     String getCommentDisplay() {
@@ -333,102 +342,35 @@ class FeedCard extends StatelessWidget {
           }
         }
       }
-      return _formatCount(commentCount);
+      return formatCount(commentCount);
     }
 
     final voteupDisplay = getVoteupDisplay();
     final commentDisplay = getCommentDisplay();
 
-    // 如果 contentType 为空（brief 解析失败），尝试从 jumpUrl 解析
+    // 如果 contentType 为空（brief 解析失败），用链接服务从跳转 URL 解析类型。
     if (contentType.isEmpty && jumpUrl.isNotEmpty) {
-      final uri = Uri.tryParse(jumpUrl);
-      if (uri != null) {
-        // 处理 zhihu:// 协议
-        if (uri.scheme == 'zhihu') {
-          String type = uri.host;
-          List<String> pathSegments = uri.pathSegments;
-
-          if (type.isEmpty && pathSegments.isNotEmpty) {
-            type = pathSegments[0];
-            pathSegments = pathSegments.sublist(1);
-          }
-
-          String? id;
-          if (pathSegments.isNotEmpty) id = pathSegments[0];
-
-          if (type == 'answer') {
-            if (id != null && id.isNotEmpty) {
-              contentType = 'answer';
-              answerId = id;
-              // 尝试寻找 questionId? 通常 URL 里没有，但 ID 足够获取详情
-            }
-          } else if (type == 'question') {
-            if (pathSegments.length > 2 && pathSegments[1] == 'answer') {
-              final aId = pathSegments[2];
-              if (id != null) {
-                contentType = 'answer';
-                questionId = id;
-                answerId = aId;
-              }
-            } else if (id != null) {
-              contentType = 'question';
-              questionId = id;
-            }
-          } else if (type == 'article') {
-            if (id != null) {
-              contentType = 'article';
-              articleId = id;
-            }
-          }
-        } else if (uri.scheme == 'http' || uri.scheme == 'https') {
-          // 尝试从 HTTP URL 解析
-          final segments = uri.pathSegments;
-          if (segments.contains('answer')) {
-            final index = segments.indexOf('answer');
-            if (index + 1 < segments.length) {
-              contentType = 'answer';
-              answerId = segments[index + 1];
-              // 尝试反向找 questionId
-              if (index - 1 >= 0 && segments[index - 1] != 'question') {
-                // unexpected structure?
-              }
-              if (segments.contains('question')) {
-                final qIdx = segments.indexOf('question');
-                if (qIdx + 1 < segments.length) {
-                  questionId = segments[qIdx + 1];
-                }
-              }
-            }
-          } else if (segments.contains('question')) {
-            final index = segments.indexOf('question');
-            if (index + 1 < segments.length) {
-              // check if answer follows
-              // handled above or separately?
-              // If it's just question without answer
-              if (!segments.contains('answer')) {
-                contentType = 'question';
-                questionId = segments[index + 1];
-              }
-            }
-          } else if (segments.contains('p')) {
-            final index = segments.indexOf('p');
-            if (index + 1 < segments.length) {
-              contentType = 'article';
-              articleId = segments[index + 1];
-            }
-          } else if (segments.contains('pin')) {
-            final index = segments.indexOf('pin');
-            if (index + 1 < segments.length) {
-              // Let logic below handle Pin or set it here
-              // The logic below handles 'pin' contentType OR 'jumpUrl' check
-              // So we don't strictly need to set contentType='pin' here but it helps.
-              contentType = 'pin';
-              // Logic below extracts ID from URL again if contentType is pin?
-              // No, logic below does: OR jumpUrl.contains('pin')
-              // So Pin is fine.
-            }
-          }
-        }
+      final target = ContentLinkTarget.parse(jumpUrl);
+      if (target == null) return const SizedBox.shrink();
+      switch (target.kind) {
+        case ContentLinkKind.answer:
+          contentType = 'answer';
+          answerId = target.id;
+          questionId = target.questionId;
+        case ContentLinkKind.question:
+          contentType = 'question';
+          questionId = target.id;
+        case ContentLinkKind.article:
+          contentType = 'article';
+          articleId = target.id;
+        case ContentLinkKind.pin:
+          contentType = 'pin';
+          questionId = null;
+          pinIdFromUrl = target.id;
+        case ContentLinkKind.user:
+        case ContentLinkKind.video:
+        case ContentLinkKind.external:
+          break;
       }
     }
 
@@ -437,15 +379,8 @@ class FeedCard extends StatelessWidget {
       AnswerHttp.preload(answerId);
     } else if (contentType == 'article' && articleId != null) {
       ArticleHttp.preload(articleId);
-    } else if (contentType == 'pin' && jumpUrl.isNotEmpty) {
-      // Pin ID 提取并预加载
-      final uri = Uri.tryParse(jumpUrl);
-      if (uri != null && uri.pathSegments.contains('pin')) {
-        final idx = uri.pathSegments.indexOf('pin');
-        if (idx + 1 < uri.pathSegments.length) {
-          PinHttp.preload(uri.pathSegments[idx + 1]);
-        }
-      }
+    } else if (contentType == 'pin' && pinIdFromUrl != null) {
+      PinHttp.preload(pinIdFromUrl);
     }
 
     // Card Content Builder (Reusable)
@@ -587,38 +522,30 @@ class FeedCard extends StatelessWidget {
         _notifyContentOpen();
         Get.toNamed(Routes.question, arguments: {'questionId': questionId});
       };
-    } else if (contentType == 'pin' && jumpUrl.isNotEmpty) {
-      // Pin ID 从 URL 提取
-      String? pinId;
-      final uri = Uri.tryParse(jumpUrl);
-      if (uri != null && uri.pathSegments.contains('pin')) {
-        final idx = uri.pathSegments.indexOf('pin');
-        if (idx + 1 < uri.pathSegments.length) {
-          pinId = uri.pathSegments[idx + 1];
-        }
-      }
-      if (pinId != null) {
-        onTap = () {
-          _notifyContentOpen();
-          Get.toNamed(Routes.pin, arguments: {'pinId': pinId});
-        };
-      }
+    } else if (contentType == 'pin' && pinIdFromUrl != null) {
+      onTap = () {
+        _notifyContentOpen();
+        Get.toNamed(Routes.pin, arguments: {'pinId': pinIdFromUrl});
+      };
     }
 
-    // 如果没有匹配的导航，使用通用 URL 处理
-    onTap ??= () {
-      if (jumpUrl.isNotEmpty) {
+    // 没有匹配的导航时，仅当跳转 URL 可验证才保留可点击行为。
+    if (onTap == null && jumpUrl.isNotEmpty) {
+      onTap = () {
         _notifyContentOpen();
         _handleCommonCardTap(jumpUrl);
-      }
-    };
+      };
+    }
 
+    // 无法识别且没有有效 URL 的卡片不显示伪按钮。
     return Card(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: buildCardContent(),
-      ),
+      child: onTap == null
+          ? buildCardContent()
+          : InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(16),
+              child: buildCardContent(),
+            ),
     );
   }
 
@@ -659,8 +586,8 @@ class FeedCard extends StatelessWidget {
     final question = target['question'] as Map<String, dynamic>?;
     final author = target['author'] as Map<String, dynamic>?;
     final excerpt = target['excerpt'] ?? '';
-    final voteupCount = target['voteup_count'] ?? 0;
-    final commentCount = target['comment_count'] ?? 0;
+    final voteupCount = parseCount(target['voteup_count']);
+    final commentCount = parseCount(target['comment_count']);
 
     final questionTitle = question?['title'] ?? '';
     final authorName = author?['name'] ?? '匿名用户';
@@ -766,7 +693,7 @@ class FeedCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    _formatCount(voteupCount),
+                    formatCount(voteupCount),
                     style: TextStyle(
                       fontSize: 12,
                       color: colorScheme.onSurfaceVariant,
@@ -780,7 +707,7 @@ class FeedCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    _formatCount(commentCount),
+                    formatCount(commentCount),
                     style: TextStyle(
                       fontSize: 12,
                       color: colorScheme.onSurfaceVariant,
@@ -805,8 +732,8 @@ class FeedCard extends StatelessWidget {
     final author = target['author'] as Map<String, dynamic>?;
     final excerpt = target['excerpt'] ?? '';
     final imageUrl = target['image_url'] ?? '';
-    final voteupCount = target['voteup_count'] ?? 0;
-    final commentCount = target['comment_count'] ?? 0;
+    final voteupCount = parseCount(target['voteup_count']);
+    final commentCount = parseCount(target['comment_count']);
 
     final authorName = author?['name'] ?? '匿名用户';
 
@@ -908,7 +835,7 @@ class FeedCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        _formatCount(voteupCount),
+                        formatCount(voteupCount),
                         style: TextStyle(
                           fontSize: 12,
                           color: colorScheme.onSurfaceVariant,
@@ -922,7 +849,7 @@ class FeedCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        _formatCount(commentCount),
+                        formatCount(commentCount),
                         style: TextStyle(
                           fontSize: 12,
                           color: colorScheme.onSurfaceVariant,
@@ -1053,7 +980,7 @@ class FeedCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        _formatCount(playCount),
+                        formatCount(playCount),
                         style: TextStyle(
                           fontSize: 12,
                           color: colorScheme.onSurfaceVariant,
@@ -1078,62 +1005,56 @@ class FeedCard extends StatelessWidget {
   ) {
     final title = target['title'] ?? target['question']?['title'] ?? '';
     final excerpt = target['excerpt'] ?? '';
+    final url = target['url']?.toString() ?? '';
 
+    final content = Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (excerpt.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              excerpt,
+              style: TextStyle(
+                fontSize: 12,
+                color: colorScheme.onSurface.withValues(alpha: 0.8),
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ],
+      ),
+    );
+
+    // 没有可验证的跳转 URL 时不得保留一个什么也不做的 InkWell。
+    if (url.isEmpty) {
+      return Card(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: content,
+      );
+    }
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: InkWell(
         onTap: () {
-          final url = target['url']?.toString() ?? '';
-          if (url.isNotEmpty) {
-            _notifyContentOpen();
-            _handleCommonCardTap(url);
-          }
+          _notifyContentOpen();
+          _handleCommonCardTap(url);
         },
         borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              if (excerpt.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  excerpt,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colorScheme.onSurface.withValues(alpha: 0.8),
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ],
-          ),
-        ),
+        child: content,
       ),
     );
-  }
-
-  /// 格式化数字
-  String _formatCount(dynamic count) {
-    if (count == null) return '0';
-    final num = count is int ? count : int.tryParse(count.toString()) ?? 0;
-    if (num >= 10000) {
-      return '${(num / 10000).toStringAsFixed(1)}万';
-    }
-    if (num >= 1000) {
-      return '${(num / 1000).toStringAsFixed(1)}k';
-    }
-    return num.toString();
   }
 }

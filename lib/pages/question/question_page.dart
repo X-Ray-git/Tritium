@@ -9,9 +9,11 @@ import '../../http/init.dart';
 import '../../models/common/paging_info.dart';
 import '../../common/widgets/loading_widget.dart';
 import '../../common/widgets/error_widget.dart' as custom;
+import '../../common/widgets/feedback_toast.dart';
 import '../../router/app_pages.dart';
 import '../../common/widgets/html/custom_html.dart';
 import '../../common/widgets/html/html_chunker.dart';
+import '../../utils/count_format.dart';
 import '../../utils/storage.dart';
 import '../../common/widgets/app_chrome.dart';
 import '../../common/widgets/content_actions.dart';
@@ -35,6 +37,7 @@ class _QuestionPageState extends State<QuestionPage> {
   String? _questionId;
   String? _nextUrl;
   bool _isLoadingMore = false;
+  final Set<String> _consumedAnswerCursors = {};
   int _loadGeneration = 0;
   bool _isDetailExpanded = false;
   late final RxString _sortBy;
@@ -63,6 +66,7 @@ class _QuestionPageState extends State<QuestionPage> {
     if (_questionId == null) return;
     final generation = ++_loadGeneration;
     _isLoadingMore = false;
+    _consumedAnswerCursors.clear();
 
     final answersResult = await QuestionHttp.getQuestionAnswers(
       questionId: _questionId!,
@@ -77,15 +81,17 @@ class _QuestionPageState extends State<QuestionPage> {
       _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
     } else if (answersResult is Error) {
       _nextUrl = null;
-      Get.snackbar('回答加载失败', (answersResult as Error).errMsg);
+      TritiumFeedback.error('回答加载失败', (answersResult as Error).errMsg);
     }
   }
 
   Widget _buildHtmlContent(String content, ColorScheme colorScheme) {
-    return CustomHtml(
-      content: content,
-      fontSize: 15,
-      imageUrls: HtmlChunker.extractImageUrls(content),
+    return SelectionArea(
+      child: CustomHtml(
+        content: content,
+        fontSize: 15,
+        imageUrls: HtmlChunker.extractImageUrls(content),
+      ),
     );
   }
 
@@ -97,6 +103,7 @@ class _QuestionPageState extends State<QuestionPage> {
 
     final generation = ++_loadGeneration;
     _isLoadingMore = false;
+    _consumedAnswerCursors.clear();
     _loadingState.value = const Loading();
 
     // 加载问题详情
@@ -123,34 +130,60 @@ class _QuestionPageState extends State<QuestionPage> {
       _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
     } else if (answersResult is Error) {
       _nextUrl = null;
-      Get.snackbar('回答加载失败', (answersResult as Error).errMsg);
+      TritiumFeedback.error('回答加载失败', (answersResult as Error).errMsg);
     }
 
     _loadingState.value = questionResult;
   }
 
   Future<void> _loadMore() async {
-    if (_isLoadingMore || _nextUrl == null) return;
+    final cursor = _nextUrl;
+    if (_isLoadingMore || cursor == null) return;
+    if (_consumedAnswerCursors.contains(cursor)) {
+      _nextUrl = null;
+      return;
+    }
     final generation = _loadGeneration;
     _isLoadingMore = true;
 
     final result = await QuestionHttp.getQuestionAnswers(
       questionId: _questionId!,
-      nextUrl: _nextUrl,
-      // nextUrl usually contains sort param, but good to ensure consistency if API changes
+      nextUrl: cursor,
+      sortBy: _sortBy.value,
     );
 
     if (!mounted || generation != _loadGeneration) return;
 
     if (result is Success<Map<String, dynamic>>) {
+      _consumedAnswerCursors.add(cursor);
       final data = result.response;
       final items =
           (data['data'] as List?)?.whereType<Map<String, dynamic>>().toList() ??
           [];
-      _answers.addAll(items);
-      _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
+      String? answerId(Map<String, dynamic> item) {
+        final target = (item['target'] as Map<String, dynamic>?) ?? item;
+        return target['id']?.toString();
+      }
+
+      final knownIds = _answers.map(answerId).whereType<String>().toSet();
+      final newItems = items
+          .where((item) {
+            final id = answerId(item);
+            return id != null && id.isNotEmpty && knownIds.add(id);
+          })
+          .toList(growable: false);
+      _answers.addAll(newItems);
+
+      final candidate = PagingInfo.fromJson(data['paging']).nextUrl;
+      _nextUrl =
+          newItems.isNotEmpty &&
+              candidate != null &&
+              candidate != cursor &&
+              !_consumedAnswerCursors.contains(candidate)
+          ? candidate
+          : null;
     } else if (result is Error) {
-      Get.snackbar('加载失败', (result as Error).errMsg);
+      TritiumFeedback.error('加载失败', (result as Error).errMsg);
     }
 
     _isLoadingMore = false;
@@ -184,9 +217,13 @@ class _QuestionPageState extends State<QuestionPage> {
         final data = _questionData!;
         final title = data['title'] ?? '';
         final detail = data['detail'] ?? '';
-        final answerCount = data['answer_count'] ?? 0;
-        final followerCount = data['follower_count'] ?? 0;
-        final viewCount = data['visit_count'] ?? 0;
+        final answerCount = parseCount(data['answer_count']);
+        final followerCount = parseCount(data['follower_count']);
+        // 浏览量优先使用 visit_count，缺失时兼容 read_count；两者都无效显示 “—”。
+        final viewCount = firstValidCount(
+          data['visit_count'],
+          data['read_count'],
+        );
 
         // 计算所有回答 ID 列表，用于详情页滑动切换
         final answerIds = _answers
@@ -325,10 +362,10 @@ class _QuestionPageState extends State<QuestionPage> {
                       children: [
                         _StatItem(
                           label: '关注者',
-                          value: _formatCount(followerCount),
+                          value: formatCount(followerCount),
                         ),
                         const SizedBox(width: 24),
-                        _StatItem(label: '被浏览', value: _formatCount(viewCount)),
+                        _StatItem(label: '被浏览', value: formatCount(viewCount)),
                       ],
                     ),
                   ],
@@ -350,7 +387,7 @@ class _QuestionPageState extends State<QuestionPage> {
                 child: Row(
                   children: [
                     Text(
-                      '$answerCount 个回答',
+                      '${answerCount == null ? '—' : formatCount(answerCount)} 个回答',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -442,6 +479,8 @@ class _QuestionPageState extends State<QuestionPage> {
                   answer: answer,
                   questionId: _questionId!,
                   allAnswerIds: answerIds,
+                  nextUrl: _nextUrl,
+                  sortBy: _sortBy.value,
                 );
               }, childCount: _answers.length + (_nextUrl != null ? 1 : 0)),
             ),
@@ -477,18 +516,6 @@ class _QuestionPageState extends State<QuestionPage> {
         url: _questionUrl,
       ),
     );
-  }
-
-  String _formatCount(dynamic count) {
-    if (count == null) return '0';
-    final num = count is int ? count : int.tryParse(count.toString()) ?? 0;
-    if (num >= 10000) {
-      return '${(num / 10000).toStringAsFixed(1)}万';
-    }
-    if (num >= 1000) {
-      return '${(num / 1000).toStringAsFixed(1)}k';
-    }
-    return num.toString();
   }
 }
 
@@ -529,11 +556,15 @@ class _AnswerItem extends StatelessWidget {
   final Map<String, dynamic> answer;
   final String questionId;
   final List<String> allAnswerIds;
+  final String? nextUrl;
+  final String sortBy;
 
   const _AnswerItem({
     required this.answer,
     required this.questionId,
     required this.allAnswerIds,
+    this.nextUrl,
+    this.sortBy = 'default',
   });
 
   @override
@@ -545,8 +576,8 @@ class _AnswerItem extends StatelessWidget {
 
     final author = target['author'] as Map<String, dynamic>?;
     final excerpt = target['excerpt'] ?? '';
-    final voteupCount = target['voteup_count'] ?? 0;
-    final commentCount = target['comment_count'] ?? 0;
+    final voteupCount = parseCount(target['voteup_count']);
+    final commentCount = parseCount(target['comment_count']);
 
     final authorName = author?['name'] ?? '匿名用户';
     final authorHeadline = author?['headline'] ?? '';
@@ -567,6 +598,8 @@ class _AnswerItem extends StatelessWidget {
               'questionId': questionId,
               'answerId': answerId,
               'answerIds': allAnswerIds,
+              if (nextUrl != null && nextUrl!.isNotEmpty) 'nextUrl': nextUrl,
+              'sortBy': sortBy,
             },
           );
         }
@@ -654,7 +687,7 @@ class _AnswerItem extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  _formatCount(voteupCount),
+                  formatCount(voteupCount),
                   style: TextStyle(
                     fontSize: 13,
                     color: colorScheme.onSurfaceVariant,
@@ -668,7 +701,7 @@ class _AnswerItem extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  _formatCount(commentCount),
+                  formatCount(commentCount),
                   style: TextStyle(
                     fontSize: 13,
                     color: colorScheme.onSurfaceVariant,
@@ -680,17 +713,5 @@ class _AnswerItem extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _formatCount(dynamic count) {
-    if (count == null) return '0';
-    final num = count is int ? count : int.tryParse(count.toString()) ?? 0;
-    if (num >= 10000) {
-      return '${(num / 10000).toStringAsFixed(1)}万';
-    }
-    if (num >= 1000) {
-      return '${(num / 1000).toStringAsFixed(1)}k';
-    }
-    return num.toString();
   }
 }

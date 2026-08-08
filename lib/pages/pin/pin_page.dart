@@ -17,6 +17,7 @@ import '../../common/widgets/content_actions.dart';
 import '../../common/widgets/reading_progress.dart';
 import '../../services/reading_history_service.dart';
 import '../../utils/comment_preload.dart';
+import '../../utils/count_format.dart';
 
 /// 想法（Pin）详情页
 class PinPage extends StatefulWidget {
@@ -122,8 +123,8 @@ class _PinPageState extends State<PinPage> {
 
         final contentRaw = data['content_html'] ?? data['content'] ?? '';
         final author = data['author'] as Map<String, dynamic>?;
-        final voteupCount = data['voteup_count'] ?? 0;
-        final commentCount = data['comment_count'] ?? 0;
+        final voteupCount = parseCount(data['voteup_count']);
+        final commentCount = parseCount(data['comment_count']);
         // createdTime 这里暂不使用
         // final createdTime = data['created'] as int?;
 
@@ -139,116 +140,120 @@ class _PinPageState extends State<PinPage> {
             }
             return false;
           },
-          child: ListView(
-            controller: _scrollController,
-            padding: EdgeInsets.zero,
-            children: [
-              // Author info
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: colorScheme.primaryContainer,
-                      backgroundImage: authorAvatar.isNotEmpty
-                          ? CachedNetworkImageProvider(authorAvatar)
-                          : null,
-                      child: authorAvatar.isEmpty
-                          ? Icon(
-                              Icons.person,
-                              color: colorScheme.onPrimaryContainer,
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            authorName,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.onSurface,
-                            ),
-                          ),
-                          if (authorHeadline.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              authorHeadline,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Content
-              if (contentRaw.isNotEmpty)
+          child: SelectionArea(
+            child: ListView(
+              controller: _scrollController,
+              padding: EdgeInsets.zero,
+              children: [
+                // Author info
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: CustomHtml(
-                    content: contentRaw is String
-                        ? contentRaw
-                        : contentRaw.toString(),
-                    fontSize: 17,
-                    imageUrls: HtmlChunker.extractImageUrls(
-                      contentRaw is String ? contentRaw : contentRaw.toString(),
-                    ),
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundColor: colorScheme.primaryContainer,
+                        backgroundImage: authorAvatar.isNotEmpty
+                            ? CachedNetworkImageProvider(authorAvatar)
+                            : null,
+                        child: authorAvatar.isEmpty
+                            ? Icon(
+                                Icons.person,
+                                color: colorScheme.onPrimaryContainer,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              authorName,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: colorScheme.onSurface,
+                              ),
+                            ),
+                            if (authorHeadline.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                authorHeadline,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.thumb_up_outlined,
-                      size: 20,
-                      color: colorScheme.secondary,
+                // Content
+                if (contentRaw.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: CustomHtml(
+                      content: contentRaw is String
+                          ? contentRaw
+                          : contentRaw.toString(),
+                      fontSize: 17,
+                      imageUrls: HtmlChunker.extractImageUrls(
+                        contentRaw is String
+                            ? contentRaw
+                            : contentRaw.toString(),
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '$voteupCount 赞同',
-                      style: TextStyle(color: colorScheme.secondary),
-                    ),
-                    const SizedBox(width: 24),
-                    Icon(
-                      Icons.chat_bubble_outline,
-                      size: 20,
-                      color: colorScheme.secondary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '$commentCount 评论',
-                      style: TextStyle(color: colorScheme.secondary),
-                    ),
-                  ],
-                ),
-              ),
+                  ),
 
-              // 评论区（嵌入在想法内容下方）
-              SizedBox(key: _bodyEndKey),
-              if (_showComments && _pinId != null)
-                InlineCommentWidget(
-                  resourceId: _pinId!,
-                  resourceType: 'pins',
-                  showHeader: true,
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.thumb_up_outlined,
+                        size: 20,
+                        color: colorScheme.secondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${formatCount(voteupCount)} 赞同',
+                        style: TextStyle(color: colorScheme.secondary),
+                      ),
+                      const SizedBox(width: 24),
+                      Icon(
+                        Icons.chat_bubble_outline,
+                        size: 20,
+                        color: colorScheme.secondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${formatCount(commentCount)} 评论',
+                        style: TextStyle(color: colorScheme.secondary),
+                      ),
+                    ],
+                  ),
                 ),
 
-              const SizedBox(height: 100),
-            ],
+                // 评论区（嵌入在想法内容下方）
+                SizedBox(key: _bodyEndKey),
+                if (_showComments && _pinId != null)
+                  InlineCommentWidget(
+                    resourceId: _pinId!,
+                    resourceType: 'pins',
+                    showHeader: true,
+                  ),
+
+                const SizedBox(height: 100),
+              ],
+            ),
           ),
         );
       }).withTritiumReadingSession(_readingSession),

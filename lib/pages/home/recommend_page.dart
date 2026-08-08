@@ -16,6 +16,7 @@ import '../main/main_controller.dart'; // For scroll-to-top callback
 import '../../services/preload_service.dart';
 import '../../services/recommendation_feedback_service.dart';
 import '../../common/widgets/tritium_refresh_indicator.dart';
+import '../../common/widgets/feedback_toast.dart';
 
 typedef RecommendPageLoader =
     Future<LoadingState<Map<String, dynamic>>> Function({String? nextUrl});
@@ -108,7 +109,7 @@ class RecommendController extends GetxController {
       if (feedList.isEmpty) {
         loadingState.value = Error((result as Error).errMsg);
       } else {
-        Get.snackbar('刷新失败', (result as Error).errMsg);
+        TritiumFeedback.error('刷新失败', (result as Error).errMsg);
       }
     }
     isRefreshing.value = false;
@@ -201,11 +202,7 @@ class _RecommendPageState extends State<RecommendPage> {
     _scrollController.addListener(_onScroll);
     _noticeWorker = ever<int>(controller.noNewContentNotice, (_) {
       if (!mounted) return;
-      Get.rawSnackbar(
-        message: '暂无更多新内容',
-        snackPosition: SnackPosition.BOTTOM,
-        duration: const Duration(seconds: 2),
-      );
+      TritiumFeedback.info('暂无更多新内容', '本次刷新没有新的推荐内容');
     });
 
     // 注册滚动到顶部回调

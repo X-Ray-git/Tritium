@@ -33,7 +33,7 @@ class QuestionHttp {
   ) async {
     try {
       const include =
-          'read_count,answer_count,comment_count,follower_count,detail,excerpt,author,topics';
+          'visit_count,read_count,answer_count,comment_count,follower_count,detail,excerpt,author,topics';
       final response = await Request().get(
         '${ApiPaths.webQuestions}/$questionId?include=$include',
       );
@@ -172,7 +172,7 @@ class ArticleHttp {
   ) async {
     try {
       const include =
-          'intro,content,voteup_count,comment_count,author,created_time,updated_time,excerpt';
+          'intro,content,voteup_count,comment_count,author,created_time,updated_time,excerpt,image_url,image_width,image_height';
       final response = await Request().get(
         '${ApiPaths.webArticles}/$articleId?include=$include',
       );

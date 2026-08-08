@@ -50,7 +50,7 @@ flutter build apk --release
 ## 参考与致谢
 
 - Hydrogen：功能模块、接口与分页处理思路参考
-- Auto Folo：设计语言、维护文档和发布流程参考
+- Fourier（原 Auto Folo）：设计语言、维护文档和发布流程参考
 
 参考工程只用于理解设计和架构，Tritium 保持独立实现。
 

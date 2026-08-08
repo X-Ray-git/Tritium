@@ -38,9 +38,17 @@ Tritium 采用按页面模块组织的轻量 Flutter 架构。当前体量下不
 文章和回答的长 HTML 按块级语义拆分，超长内容解析移出主 Isolate；解析后的块通过
 单个 `SliverToBoxAdapter + Column` 一次布局。不得改回变量高度 `SliverList` 惰性
 构建，否则新块和图片进入视口时会持续修正正文终点并让阅读进度跳动。公式、表情、
-链接和知乎图片属性仍统一交给 `CustomHtml` 处理，避免为了复用 Auto Folo 的 RSS
+链接和知乎图片属性仍统一交给 `CustomHtml` 处理，避免为了复用 Fourier 的 RSS
 渲染器而引入 Tritium 不需要的视频、桌面交互和代理逻辑。图片必须保留显式宽高或
 样式中的尺寸信息，使用稳定占位、8 像素圆角和按设备像素密度设置的缓存尺寸。
+
+正文语义组件建立在 flutter_html 扩展之上，与稳定布局正交：行内代码是
+alphabetic baseline 对齐的半透明圆角胶囊；`<pre>` 渲染为单容器代码块（8px 圆角、
+细边框、横向滚动、复制按钮带 1.2 秒勾选态），`<pre><code>` 不会出现两层背景；
+引用块、宽表横向滚动、列表、分割线统一视觉。文本选择在页面级接入
+`SelectionArea`：回答页包在整个 PageView 外层（SelectionArea 是横滑祖先时不会
+抢走横滑手势），文章/想法/问题描述/评论包在各自滚动视图外层；这些包装不改变
+正文终点的几何，阅读进度、标题时机与评论预加载不受影响。
 
 回答横滑期间不得触发父页面整体重建、正文 DOM 解析或评论列表初始化。切页后的
 标题、计数、预加载与纵向位置复位统一在横向滚动结束后执行。
@@ -61,16 +69,49 @@ Tritium 采用按页面模块组织的轻量 Flutter 架构。当前体量下不
 
 ## 内容链接
 
-正文链接、历史记录与 Android 外部 Intent 最终都进入 `ContentLinkService`。原生
-支持问题、回答、文章、想法和用户；视频及尚未建设原生只读页的话题、机构、专栏等
-知乎目的地转换为 HTTPS 后交给系统浏览器。Android 使用 `singleTop` Activity：
-冷启动链接由 `getInitialLink` 消费，运行中链接由 `onNewIntent` 推送，禁止建立第二
-套页面路由表。
+正文链接、历史记录与 Android 外部 Intent 最终都进入 `ContentLinkService`，采用
+三层结构：
+
+1. **URL 归一化**（`ContentLinkTarget.normalizeLinkUrl`）：去除无效空白、支持
+   协议相对 `//host` 与站内相对路径（带或不带前导斜线）、解包
+   `link.zhihu.com/?target=`（最大解包深度 + 已访问集合防循环）、保留真正外部
+   HTTP/HTTPS、拒绝 `javascript:`/`data:`/`file:` 等不安全 scheme。
+2. **类型化解析**：覆盖 question/answer 组合、article/p、pin/pins、people/org
+   （org 复用用户页）、appview、oia/articles、zvideo/video 与 `zhihu://`
+   单复数 deep link。
+3. **导航策略**：原生支持问题、回答、文章、想法和用户；视频及尚未建设原生只读
+   页的话题、机构、专栏等知乎目的地转换为 HTTPS 后交给系统浏览器。无效链接给
+   出统一反馈，不静默失败。
+
+HTML 渲染不再用覆盖全部 `<a>` 的扩展压平链接：普通链接保留 flutter_html 的
+嵌套结构、样式与 `onLinkTap` 回调（同时保留文字选择），只有评论“查看图片/动图”
+链接使用专用缩略图扩展；`#anchor` 由 flutter_html 内置定位处理，找不到目标时
+不再交给浏览器；没有 `href` 的文字不伪装成可点击。Android 使用 `singleTop`
+Activity：冷启动链接由 `getInitialLink` 消费，运行中链接由 `onNewIntent` 推送，
+禁止建立第二套页面路由表。
+
+## 回答分页
+
+回答页拥有独立的 `AnswerPager` 状态模型（questionId、answerIds、nextUrl、
+sortBy）。从问题页进入时接收 ID 列表 + 下一页游标 + 排序方式作为种子；从只传
+单个回答的入口进入时先补齐所属问题第一页并保留当前回答。分页约定与推荐/评论
+一致：按 ID 去重、重复 cursor/空页/`is_end` 停止、失败可重试；追加数据不改动
+既有条目的索引，PageController 不跳页。占位页只是过渡状态，不渲染成回答，
+也不触发“已切换回答”的振动。
+
+## 统计值与反馈
+
+统计值统一经 `lib/utils/count_format.dart` 可空解析：字段缺失、解析失败或尚未
+加载时显示 “—”，绝不伪装成 0；浏览量 `visit_count` 优先、`read_count` 兜底。
+状态反馈统一走 `lib/common/widgets/feedback_toast.dart` 的 `TritiumFeedback`
+（info/success/warning/error 顶部胶囊，滑入淡入、不拦截交互）；加载遮罩仍由
+SmartDialog 控制。
 
 ## 本地参考工程
 
 - Hydrogen 固定放在 `reference/hydrogen/`，仅用于核对知乎接口、数据字段和功能
-  模块行为；Auto Folo 仍从其独立工程路径参考设计、维护和发布流程。
+  模块行为；Fourier（原 Auto Folo）从 `/Users/x.rw/dev/Fourier` 参考设计、维护和
+  发布流程。它不是 Tritium 的构建依赖，路径缺失时不得影响分析、测试或构建。
 - `reference/` 被 Tritium 根仓库整体忽略。其内部 Git 元数据、构建产物、签名文件
   和配置不得暂存、复制进 Tritium 或进入 CI/Release 输入。
 - 参考工程不是 Tritium 的源码依赖；新克隆缺少它时，分析、测试和构建必须照常完成。

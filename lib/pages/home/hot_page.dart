@@ -9,6 +9,7 @@ import '../../common/widgets/empty_widget.dart';
 import '../widgets/hot_card.dart';
 import '../../services/preload_service.dart';
 import '../../common/widgets/tritium_refresh_indicator.dart';
+import '../../common/widgets/feedback_toast.dart';
 import '../main/main_controller.dart';
 
 /// 热榜页控制器
@@ -59,7 +60,7 @@ class HotController extends GetxController {
       if (hotList.isEmpty) {
         loadingState.value = Error((result as Error).errMsg);
       } else {
-        Get.snackbar('刷新失败', (result as Error).errMsg);
+        TritiumFeedback.error('刷新失败', (result as Error).errMsg);
       }
     }
     isRefreshing.value = false;

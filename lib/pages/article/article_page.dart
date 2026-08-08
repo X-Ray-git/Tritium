@@ -20,6 +20,7 @@ import '../../common/widgets/content_actions.dart';
 import '../../common/widgets/reading_progress.dart';
 import '../../services/reading_history_service.dart';
 import '../../utils/comment_preload.dart';
+import '../../utils/count_format.dart';
 
 /// 专栏文章页
 class ArticlePage extends StatefulWidget {
@@ -143,8 +144,8 @@ class _ArticlePageState extends State<ArticlePage> {
             : '<p><i>(正文内容为空，显示摘要)</i></p><p>$excerpt</p>';
 
         final author = data['author'] as Map<String, dynamic>?;
-        final voteupCount = data['voteup_count'] ?? 0;
-        final commentCount = data['comment_count'] ?? 0;
+        final voteupCount = parseCount(data['voteup_count']);
+        final commentCount = parseCount(data['comment_count']);
         final imageUrl = data['image_url'] ?? '';
         // createdTime 这里暂不使用
         // final createdTime = data['created'] as int?;
@@ -169,187 +170,151 @@ class _ArticlePageState extends State<ArticlePage> {
                     }
                     return false;
                   },
-                  child: CustomScrollView(
-                    controller: _scrollController,
-                    slivers: [
-                      // AppBar
-                      TritiumSliverAppBar(
-                        title: const TritiumSectionTitle('专栏文章'),
-                        actions: [
-                          ContentActionsMenu(
-                            title: title.toString(),
-                            url: _articleUrl,
+                  child: SelectionArea(
+                    child: CustomScrollView(
+                      controller: _scrollController,
+                      slivers: [
+                        // AppBar
+                        TritiumSliverAppBar(
+                          title: const TritiumSectionTitle('专栏文章'),
+                          actions: [
+                            ContentActionsMenu(
+                              title: title.toString(),
+                              url: _articleUrl,
+                            ),
+                          ],
+                        ),
+                        // 封面图
+                        if (imageUrl.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(11, 8, 11, 0),
+                              child: _ArticleCoverImage(
+                                url: imageUrl,
+                                imageUrls: _imageUrls,
+                                sourceWidth: parseDouble(data['image_width']),
+                                sourceHeight: parseDouble(data['image_height']),
+                              ),
+                            ),
                           ),
-                        ],
-                      ),
-                      // 封面图
-                      if (imageUrl.isNotEmpty)
+                        // 标题
                         SliverToBoxAdapter(
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(11, 8, 11, 0),
-                            child: GestureDetector(
-                              onTap: () => ImageViewer.show(
-                                context,
-                                imageUrl,
-                                imageUrls: _imageUrls,
+                            padding: const EdgeInsets.fromLTRB(11, 16, 11, 12),
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: colorScheme.onSurface,
+                                height: 1.35,
                               ),
-                              child: Hero(
-                                tag: imageUrl,
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: AspectRatio(
-                                    aspectRatio: 5 / 3,
-                                    child: CachedNetworkImage(
-                                      imageUrl: imageUrl,
-                                      fit: BoxFit.contain,
-                                      fadeInDuration: const Duration(
-                                        milliseconds: 80,
-                                      ),
-                                      fadeOutDuration: const Duration(
-                                        milliseconds: 80,
-                                      ),
-                                      placeholder: (context, url) => ColoredBox(
-                                        color: colorScheme
-                                            .surfaceContainerHighest
-                                            .withValues(alpha: 0.35),
-                                      ),
-                                      httpHeaders: const {
-                                        'Referer': 'https://www.zhihu.com/',
-                                      },
-                                      errorWidget: (context, url, error) =>
-                                          ColoredBox(
-                                            color: colorScheme
-                                                .surfaceContainerHighest
-                                                .withValues(alpha: 0.2),
-                                            child: Icon(
-                                              Icons.broken_image_outlined,
-                                              color:
-                                                  colorScheme.onSurfaceVariant,
-                                            ),
-                                          ),
-                                    ),
+                            ),
+                          ),
+                        ),
+                        // 作者信息
+                        SliverToBoxAdapter(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 11,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: colorScheme.outlineVariant.withValues(
+                                    alpha: 0.3,
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                      // 标题
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(11, 16, 11, 12),
-                          child: Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.onSurface,
-                              height: 1.35,
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: colorScheme.primaryContainer,
+                                  backgroundImage: authorAvatar.isNotEmpty
+                                      ? CachedNetworkImageProvider(authorAvatar)
+                                      : null,
+                                  child: authorAvatar.isEmpty
+                                      ? Icon(
+                                          Icons.person,
+                                          color: colorScheme.onPrimaryContainer,
+                                        )
+                                      : null,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        authorName,
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                          color: colorScheme.onSurface,
+                                        ),
+                                      ),
+                                      if (authorHeadline.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          authorHeadline,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: colorScheme.onSurfaceVariant,
+                                            height: 1.0,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                      ),
-                      // 作者信息
-                      SliverToBoxAdapter(
-                        child: Container(
+                        // 文章内容
+                        ChunkedHtmlSliver(
+                          key: ValueKey(content.hashCode),
+                          content: content,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 11,
-                            vertical: 12,
+                            vertical: 8,
                           ),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                color: colorScheme.outlineVariant.withValues(
-                                  alpha: 0.3,
-                                ),
+                          fontSize: 17,
+                          imageUrls: _imageUrls,
+                          onReady: () {
+                            _contentReady = true;
+                            _readingSession?.contentReady();
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) _maybeShowComments();
+                            });
+                            if (_pendingCommentScroll) _scrollToComments();
+                          },
+                        ),
+                        // 底部间距
+                        // 评论区
+                        SliverToBoxAdapter(child: SizedBox(key: _commentsKey)),
+                        if (_showComments && _articleId != null)
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) => InlineCommentWidget(
+                                resourceId: _articleId!,
+                                resourceType: 'articles',
+                                showHeader: true,
                               ),
+                              childCount: 1,
                             ),
                           ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 20,
-                                backgroundColor: colorScheme.primaryContainer,
-                                backgroundImage: authorAvatar.isNotEmpty
-                                    ? CachedNetworkImageProvider(authorAvatar)
-                                    : null,
-                                child: authorAvatar.isEmpty
-                                    ? Icon(
-                                        Icons.person,
-                                        color: colorScheme.onPrimaryContainer,
-                                      )
-                                    : null,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      authorName,
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        color: colorScheme.onSurface,
-                                      ),
-                                    ),
-                                    if (authorHeadline.isNotEmpty) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        authorHeadline,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: colorScheme.onSurfaceVariant,
-                                          height: 1.0,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      // 文章内容
-                      ChunkedHtmlSliver(
-                        key: ValueKey(content.hashCode),
-                        content: content,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 11,
-                          vertical: 8,
-                        ),
-                        fontSize: 17,
-                        imageUrls: _imageUrls,
-                        onReady: () {
-                          _contentReady = true;
-                          _readingSession?.contentReady();
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) _maybeShowComments();
-                          });
-                          if (_pendingCommentScroll) _scrollToComments();
-                        },
-                      ),
-                      // 底部间距
-                      // 评论区
-                      SliverToBoxAdapter(child: SizedBox(key: _commentsKey)),
-                      if (_showComments && _articleId != null)
-                        SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => InlineCommentWidget(
-                              resourceId: _articleId!,
-                              resourceType: 'articles',
-                              showHeader: true,
-                            ),
-                            childCount: 1,
-                          ),
-                        ),
 
-                      // 底部间距
-                      const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                    ],
+                        // 底部间距
+                        const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                      ],
+                    ),
                   ),
                 ),
               ).withTritiumReadingSession(
@@ -370,12 +335,12 @@ class _ArticlePageState extends State<ArticlePage> {
               children: [
                 _ActionButton(
                   icon: Icons.thumb_up_outlined,
-                  label: _formatCount(voteupCount),
+                  label: formatCount(voteupCount),
                 ),
                 const SizedBox(width: 24),
                 _ActionButton(
                   icon: Icons.chat_bubble_outline,
-                  label: _formatCount(commentCount),
+                  label: formatCount(commentCount),
                   onTap: _scrollToComments,
                 ),
               ],
@@ -461,17 +426,176 @@ class _ArticlePageState extends State<ArticlePage> {
     }
     return List.unmodifiable(urls);
   }
+}
 
-  String _formatCount(dynamic count) {
-    if (count == null) return '0';
-    final num = count is int ? count : int.tryParse(count.toString()) ?? 0;
-    if (num >= 10000) {
-      return '${(num / 10000).toStringAsFixed(1)}万';
+/// 解析可空数值（封面宽高等）。
+double? parseDouble(dynamic value) {
+  if (value == null) return null;
+  final parsed = value is num
+      ? value.toDouble()
+      : double.tryParse(value.toString().trim());
+  if (parsed == null || !parsed.isFinite || parsed <= 0) return null;
+  return parsed;
+}
+
+/// Flutter 的 [AspectRatio] 使用宽/高；来源与实际像素尺寸都统一走这一语义。
+double articleCoverAspectRatio({
+  double? sourceWidth,
+  double? sourceHeight,
+  double? resolvedWidth,
+  double? resolvedHeight,
+}) {
+  if (sourceWidth != null &&
+      sourceHeight != null &&
+      sourceWidth.isFinite &&
+      sourceHeight.isFinite &&
+      sourceWidth > 0 &&
+      sourceHeight > 0) {
+    return sourceWidth / sourceHeight;
+  }
+  if (resolvedWidth != null &&
+      resolvedHeight != null &&
+      resolvedWidth.isFinite &&
+      resolvedHeight.isFinite &&
+      resolvedWidth > 0 &&
+      resolvedHeight > 0) {
+    return resolvedWidth / resolvedHeight;
+  }
+  return 5 / 3;
+}
+
+/// 专栏封面：优先依据接口宽高显示；接口缺失时先使用稳定占位，图片解析后
+/// 再切换到实际比例。接口已请求宽高字段，因此后一条路径只是兼容上游缺失。
+class _ArticleCoverImage extends StatefulWidget {
+  final String url;
+  final List<String> imageUrls;
+  final double? sourceWidth;
+  final double? sourceHeight;
+
+  const _ArticleCoverImage({
+    required this.url,
+    required this.imageUrls,
+    this.sourceWidth,
+    this.sourceHeight,
+  });
+
+  @override
+  State<_ArticleCoverImage> createState() => _ArticleCoverImageState();
+}
+
+class _ArticleCoverImageState extends State<_ArticleCoverImage> {
+  double? _resolvedWidth;
+  double? _resolvedHeight;
+  ImageStream? _imageStream;
+
+  double get _effectiveRatio {
+    return articleCoverAspectRatio(
+      sourceWidth: widget.sourceWidth,
+      sourceHeight: widget.sourceHeight,
+      resolvedWidth: _resolvedWidth,
+      resolvedHeight: _resolvedHeight,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveIntrinsicRatio();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ArticleCoverImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _imageStream?.removeListener(_streamListener);
+      _imageStream = null;
+      _resolvedWidth = null;
+      _resolvedHeight = null;
+      _resolveIntrinsicRatio();
     }
-    if (num >= 1000) {
-      return '${(num / 1000).toStringAsFixed(1)}k';
+  }
+
+  @override
+  void dispose() {
+    _imageStream?.removeListener(_streamListener);
+    super.dispose();
+  }
+
+  void _resolveIntrinsicRatio() {
+    final provider = CachedNetworkImageProvider(
+      widget.url,
+      headers: const {'Referer': 'https://www.zhihu.com/'},
+    );
+    final stream = provider.resolve(ImageConfiguration.empty);
+    _imageStream = stream;
+    stream.addListener(_streamListener);
+  }
+
+  late final ImageStreamListener _streamListener = ImageStreamListener(
+    _handleImage,
+    onError: (Object _, StackTrace? _) {},
+  );
+
+  void _handleImage(ImageInfo info, bool synchronousCall) {
+    final width = info.image.width;
+    final height = info.image.height;
+    if (width <= 0 || height <= 0) return;
+    if ((_resolvedWidth == width && _resolvedHeight == height) || !mounted) {
+      return;
     }
-    return num.toString();
+    void updateDimensions() {
+      _resolvedWidth = width.toDouble();
+      _resolvedHeight = height.toDouble();
+    }
+
+    if (synchronousCall) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && (_resolvedWidth != width || _resolvedHeight != height)) {
+          setState(updateDimensions);
+        }
+      });
+    } else {
+      setState(updateDimensions);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: () =>
+          ImageViewer.show(context, widget.url, imageUrls: widget.imageUrls),
+      child: Hero(
+        tag: widget.url,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: AspectRatio(
+            aspectRatio: _effectiveRatio,
+            child: CachedNetworkImage(
+              imageUrl: widget.url,
+              fit: BoxFit.contain,
+              fadeInDuration: const Duration(milliseconds: 80),
+              fadeOutDuration: const Duration(milliseconds: 80),
+              placeholder: (context, url) => ColoredBox(
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.35,
+                ),
+              ),
+              httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
+              errorWidget: (context, url, error) => ColoredBox(
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.2,
+                ),
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

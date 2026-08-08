@@ -1,5 +1,41 @@
 # 验证记录
 
+## 2026-08-08：正文体验、链接、首页横滑、回答分页与统计统一
+
+- 背景问题现象：
+  - 正文里的站内链接几乎不可用：链接被压成纯文本，协议相对、相对路径、
+    `link.zhihu.com` 跳转和 `zhihu://` deep link 无法识别，站内目标会误进浏览器。
+  - 行内代码没有正确 baseline 对齐，代码块是默认浏览器样式；回答页底栏点赞/
+    评论数在正文未加载时短暂显示 0；问题浏览量用 `read_count` 且缺失时显示 0；
+    热榜把眼睛图标绑定到 `follower_count` 冒充浏览量。
+  - 首页三个主页不能左右滑动；回答页把问题页已加载的 ID 快照末尾误认为全部
+    回答末尾，分页无法继续。
+- `dart analyze`：通过，无诊断。
+- `flutter test`：123 项通过。新增/扩充覆盖：
+  - URL 解析矩阵（完整/相对/协议相对/`link.zhihu.com` target/`zhihu://` 单复数/
+    question+answer 组合/zhuanlan/appview/oia/people/org/视频/外部/非法 scheme/
+    循环与超深 redirect、query/fragment 保留、畸形内容 ID 拒绝）。
+  - HTML 链接（普通文字链接可点击、嵌套 span 保留、评论图片缩略图 8px 圆角、
+    无 href 不可点击、`#` 脚注不进浏览器、相对知乎链接走同一处理器）。
+  - 代码渲染（inline code 非块、`<pre><code>` 单容器、长代码横向滚动、复制按钮
+    1.2 秒勾选态恢复）。
+  - 统计语义（`visit_count` 优先、`read_count` 兜底、未知值不是 0、拒绝非有限值和
+    负数、热榜不再用 follower_count 冒充浏览量、真实顶层热度/标签字段、`—` 显示）。
+  - 首页（横滑同步导航、点击导航动画切页、重复点击保留、页面保活、设置页 Switch
+    不被 PageView 抢手势）。
+  - 回答分页（种子游标继续加载、单回答入口补全、ID/重复 cursor/空页/整页重复、失败重试、
+    is_end 停止、预取阈值、当前回答固定在首位、种子带游标不触发首屏补齐）。
+  - 回答页底栏加载前显示 “—” 的组件级验证。
+  - 专栏封面宽/高比例与非法尺寸回退、五列表格约束不异常。
+- `flutter build apk --debug`：通过。
+- 设置页 Switch 手势测试使用注入的纯测试页面，避免把 Hive 异步写入带进 Widget
+  测试的 FakeAsync；`tearDownAll` 会真实等待 `GStorage.close()`，不再以超时掩盖
+  未完成的资源关闭。
+
+本轮仍需真机覆盖：首页三页横滑与 Switch 手势共存、回答连续多页预取与占位页
+手感、正文链接真实跳转矩阵、代码块复制、文本选择与链接/图片手势共存；详见
+[真机验收清单](device-acceptance.md)。
+
 ## 2026-07-19：真机验收前基线
 
 - `dart analyze`：通过，无诊断。
@@ -19,7 +55,7 @@
 - GitHub Actions run `29691980662`：版本校验、分析、13 项测试、签名、Release APK
   构建和 artifact 上传全部通过。
 - APK 证书 SHA-256 为
-  `C677B8C96FE220664BBA662E0ED7F645691C027167997261C1ABFD6E34DC43A3`，与 Auto Folo
+  `C677B8C96FE220664BBA662E0ED7F645691C027167997261C1ABFD6E34DC43A3`，与 Fourier
   本地 keystore 证书一致。
 - 本次为 `workflow_dispatch` 内部构建，没有创建 tag 或 GitHub Release。
 
@@ -29,7 +65,7 @@
 - `flutter test`：22 项通过，覆盖回答横滑、HTML 分块、评论预加载、图片缩放平移、
   下拉刷新状态机及 AppBar 边界。
 - `flutter build apk --debug`：通过。
-- 真机确认下拉刷新反悔时圆环能够沿 Auto Folo 的路径回到 AppBar 边界，问题已解决。
+- 真机确认下拉刷新反悔时圆环能够沿 Fourier 的路径回到 AppBar 边界，问题已解决。
 - 真机确认回答正文深度阅读后反向滚动不会提前展开标题，固定 AppBar 不再出现边界
   弹性抖动。
 - 真机确认设置页首张卡片使用正确的 AppBar 顶部安全距离，不再被顶栏遮挡。
@@ -38,7 +74,7 @@
 
 - tag 工作流 run `29896803970` 在准备 Android job 时失败，未进入分析、签名或构建。
 - 原因是参考工程当时使用的 `actions/setup-java@v6` 在 GitHub Actions 中不存在。
-- Tritium 恢复使用已验证可用的 `actions/setup-java@v5`；发布结构继续参考 Auto Folo，
+- Tritium 恢复使用已验证可用的 `actions/setup-java@v5`；发布结构继续参考 Fourier，
   但第三方 action 版本必须以 Tritium 的实际 CI 验证结果为准。
 
 ## 2026-07-22：v0.2.1 正式发布

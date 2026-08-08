@@ -7,6 +7,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 
 import '../../services/account_service.dart';
+import '../../common/widgets/feedback_toast.dart';
 import '../../common/widgets/loading_widget.dart';
 
 /// 登录页面
@@ -222,7 +223,7 @@ class _LoginPageState extends State<LoginPage> {
 
       if (cookies.isEmpty) {
         SmartDialog.dismiss();
-        SmartDialog.showToast('未获取到登录信息，请先完成登录');
+        TritiumFeedback.warning('未获取到登录信息', '请先完成登录');
         return;
       }
 
@@ -231,7 +232,7 @@ class _LoginPageState extends State<LoginPage> {
 
       if (!hasZSid) {
         SmartDialog.dismiss();
-        SmartDialog.showToast('请先完成知乎登录');
+        TritiumFeedback.warning('请先完成知乎登录', '');
         return;
       }
 
@@ -252,14 +253,14 @@ class _LoginPageState extends State<LoginPage> {
 
       if (success) {
         Get.back(result: true);
-        SmartDialog.showToast('登录成功！');
+        TritiumFeedback.success('登录成功', '已使用知乎账户登录');
       } else {
-        SmartDialog.showToast('登录失败，请重试');
+        TritiumFeedback.error('登录失败', '请重试');
       }
     } catch (error) {
       _checkpoint('manual-check-error', data: {'type': error.runtimeType});
       SmartDialog.dismiss();
-      if (mounted) SmartDialog.showToast('获取登录状态失败，请重试');
+      if (mounted) TritiumFeedback.error('获取登录状态失败', '请重试');
     } finally {
       _isCheckingLogin = false;
       SmartDialog.dismiss();
@@ -332,7 +333,7 @@ class _LoginPageState extends State<LoginPage> {
 
     if (success) {
       Get.back(result: true);
-      SmartDialog.showToast('登录成功！');
+      TritiumFeedback.success('登录成功', '已使用知乎账户登录');
     } else {
       _hasCheckedLogin = false;
       _checkpoint('auto-check-reset', data: {'reason': 'account-rejected'});

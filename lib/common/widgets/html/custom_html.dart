@@ -1,19 +1,36 @@
+import 'dart:math' as math;
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:html/dom.dart' as dom;
+
 import '../../../services/content_link_service.dart';
+import '../../widgets/feedback_toast.dart';
 import '../image_viewer.dart';
 
 /// 统一的 HTML 渲染组件
-/// 支持 LaTeX 公式 (math_fork)
-/// 支持图片点击查看
+///
+/// 支持 LaTeX 公式 (math_fork)、正文图片点击查看、行内代码与整行代码块、
+/// 表格横向滚动、普通链接与应用内链接服务打通。普通 `<a href>` 保留
+/// flutter_html 的嵌套结构与文字选择能力，只有评论“查看图片/动图”链接使用
+/// 专用缩略图扩展。
 class CustomHtml extends StatelessWidget {
   final String content;
   final ColorScheme? colorScheme;
   final double fontSize;
   final EdgeInsetsGeometry? padding;
   final List<String> imageUrls;
+
+  /// 链接点击处理器；默认交给 [ContentLinkService.open]。
+  final void Function(
+    String? url,
+    Map<String, String> attributes,
+    dom.Element? element,
+  )?
+  onLinkTap;
 
   const CustomHtml({
     super.key,
@@ -22,6 +39,7 @@ class CustomHtml extends StatelessWidget {
     this.fontSize = 16.0,
     this.padding,
     this.imageUrls = const [],
+    this.onLinkTap,
   });
 
   static const _emojiMap = {
@@ -56,7 +74,7 @@ class CustomHtml extends StatelessWidget {
     '生气': 'https://pic4.zhimg.com/v2-6a976b21fd50b9535ab3e5b17c17adc7.png',
     '惊讶': 'https://pic4.zhimg.com/v2-0d9811a7961c96d84ee6946692a37469.png',
     '调皮': 'https://pic1.zhimg.com/v2-76c864a7fd5ddc110965657078812811.png',
-    '衰': 'https://pic1.zhimg.com/v2-d6d4d1689c2ce59e710aa40ab81c8f10.png',
+    '衰': 'https://pic1.zhimg.com/v2-d6d4d1689c2ce59e710aa40ab81c8f60.png',
     '发呆': 'https://pic2.zhimg.com/v2-7f09d05d34f03eab99e820014c393070.png',
     '机智': 'https://pic1.zhimg.com/v2-4e025a75f219cf79f6d1fda7726e297f.png',
     '嘘': 'https://pic4.zhimg.com/v2-f80e1dc872d68d4f0b9ac76e8525d402.png',
@@ -95,7 +113,6 @@ class CustomHtml extends StatelessWidget {
     );
 
     // 替换表情 [Emoji] -> <img ...>
-    // 遍历 map 进行替换 (性能考虑：由于 emoji 数量不多，且文本通常不长，直接遍历替换可以接受)
     _emojiMap.forEach((key, url) {
       if (processed.contains('[$key]')) {
         processed = processed.replaceAll(
@@ -108,6 +125,22 @@ class CustomHtml extends StatelessWidget {
     return processed;
   }
 
+  void _handleLinkTap(
+    String? url,
+    Map<String, String> attributes,
+    dom.Element? element,
+  ) {
+    final customHandler = onLinkTap;
+    if (customHandler != null) {
+      customHandler(url, attributes, element);
+      return;
+    }
+    final value = url?.trim() ?? '';
+    // 页内 anchor 由 flutter_html 先尝试定位；未命中时不再交给浏览器或链接服务。
+    if (value.isEmpty || value.startsWith('#')) return;
+    ContentLinkService.open(value);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -117,16 +150,15 @@ class CustomHtml extends StatelessWidget {
       padding: padding ?? EdgeInsets.zero,
       child: Html(
         data: _processContent(content),
+        onLinkTap: _handleLinkTap,
         extensions: [
           // 处理 LaTeX 公式
           TagExtension(
             tagsToExtend: {"tex-math"},
             builder: (ctx) {
-              // Priority: 1. data-tex attribute 2. element text
               String tex =
                   ctx.attributes['data-tex'] ?? ctx.element?.text ?? '';
 
-              // Decode HTML entities (unescape)
               tex = tex
                   .replaceAll('&amp;', '&')
                   .replaceAll('&lt;', '<')
@@ -149,150 +181,23 @@ class CustomHtml extends StatelessWidget {
                 ),
                 mathStyle: MathStyle.text,
                 onErrorFallback: (err) {
-                  // Fallback to text if parsing fails
                   return Text(tex, style: TextStyle(color: cs.error));
                 },
               );
             },
           ),
-          TagExtension(
-            tagsToExtend: {"img"},
-            builder: (ctx) {
-              final attributes = ctx.attributes;
-              var url =
-                  attributes['data-actualsrc'] ??
-                  attributes['data-original'] ??
-                  attributes['src'];
-
-              // Identify formula images (Zhihu specific)
-              final isEquation =
-                  attributes['class']?.contains('ee_img') == true ||
-                  (url != null && url.contains('zhihu.com/equation'));
-              final isEmoji =
-                  attributes['data-is-emoji'] == 'true' ||
-                  attributes['class']?.contains('emoji') == true;
-              final altTex = attributes['alt'];
-
-              if (isEquation && altTex != null && altTex.isNotEmpty) {
-                String tex = altTex
-                    .replaceAll('&amp;', '&')
-                    .replaceAll('&lt;', '<')
-                    .replaceAll('&gt;', '>')
-                    .replaceAll(r'\\', r'\');
-
-                final currentFontSize = ctx.style?.fontSize?.value ?? fontSize;
-                final currentColor = ctx.style?.color ?? cs.onSurface;
-
-                return Math.tex(
-                  tex,
-                  textStyle: TextStyle(
-                    fontSize: currentFontSize,
-                    color: currentColor,
-                  ),
-                  mathStyle: MathStyle.text,
-                  onErrorFallback: (err) => Text(tex),
-                );
-              }
-
-              if (url == null || url.isEmpty) return const SizedBox();
-
-              if (isEmoji) {
-                return CachedNetworkImage(
-                  imageUrl: url,
-                  width: 20,
-                  height: 20,
-                  httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
-                  placeholder: (context, url) =>
-                      const SizedBox(width: 20, height: 20),
-                  errorWidget: (context, url, error) => Text(altTex ?? ''),
-                );
-              }
-
-              if (url.startsWith('//')) {
-                url = 'https:$url';
-              } else if (!url.startsWith('http')) {
-                return const SizedBox();
-              }
-
-              return _ArticleHtmlImage(
-                url: url,
-                imageUrls: imageUrls,
-                sourceWidth:
-                    _parseDimension(attributes['width']) ??
-                    _parseStyleDimension(attributes['style'], 'width'),
-                sourceHeight:
-                    _parseDimension(attributes['height']) ??
-                    _parseStyleDimension(attributes['style'], 'height'),
-              );
-            },
-          ),
-          TagExtension(
-            tagsToExtend: {"a"},
-            builder: (ctx) {
-              final attributes = ctx.attributes;
-              final text = ctx.element?.text ?? '';
-              final href = attributes['href'];
-
-              // If link text contains "View Image" or "GIF" and href is image
-              if ((text.contains('查看图片') ||
-                      text.contains('图片') ||
-                      text.contains('动图')) &&
-                  href != null) {
-                // Check if it's an image URL (basic check)
-                // Also trust zhimg.com URLs
-                final isImage =
-                    href.endsWith('.jpg') ||
-                    href.endsWith('.png') ||
-                    href.endsWith('.gif') ||
-                    href.endsWith('.jpeg') ||
-                    href.endsWith('.webp') ||
-                    href.contains('zhimg.com');
-
-                if (isImage) {
-                  return GestureDetector(
-                    onTap: () =>
-                        ImageViewer.show(context, href, imageUrls: imageUrls),
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      child: CachedNetworkImage(
-                        imageUrl: href,
-                        width: 120, // Thumbnail size for comment replies
-                        height: 120,
-                        fit: BoxFit.cover,
-                        httpHeaders: const {
-                          'Referer': 'https://www.zhihu.com/',
-                        },
-                        fadeInDuration: const Duration(milliseconds: 200),
-                        fadeOutDuration: const Duration(milliseconds: 100),
-                        placeholder: (context, url) => Container(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest
-                              .withValues(alpha: 0.3),
-                        ),
-                        errorWidget: (context, url, error) =>
-                            const Icon(Icons.broken_image),
-                      ),
-                    ),
-                  );
-                }
-              }
-
-              // Fallback: Render as a normal link
-              return GestureDetector(
-                onTap: href == null
-                    ? null
-                    : () => ContentLinkService.open(href),
-                child: Text(
-                  text,
-                  style: TextStyle(
-                    color: ctx.style?.color ?? Colors.blue,
-                    decoration: TextDecoration.none,
-                  ),
-                ),
-              );
-            },
-          ),
+          // 正文图片
+          _ArticleImageExtension(imageUrls: imageUrls, fontSize: fontSize),
+          // 评论“查看图片/动图”缩略图链接
+          _CommentImageLinkExtension(colorScheme: cs, imageUrls: imageUrls),
+          // 引用块：圆角容器 + 左侧强调边框，内部保留链接与行内样式
+          _BlockquoteExtension(colorScheme: cs),
+          // 整行代码块
+          _CodeBlockExtension(),
+          // 行内代码
+          InlineCodeExtension(colorScheme: cs),
+          // 表格（宽表可横向滚动）
+          _ArticleTableExtension(),
         ],
         style: {
           'body': Style(
@@ -328,32 +233,46 @@ class CustomHtml extends StatelessWidget {
             lineHeight: const LineHeight(1.45),
             margin: Margins.only(top: 20, bottom: 8),
           ),
+          'h4': Style(
+            fontSize: FontSize(17),
+            fontWeight: FontWeight.w600,
+            lineHeight: const LineHeight(1.5),
+            margin: Margins.only(top: 18, bottom: 8),
+          ),
           'noscript': Style(display: Display.none),
           'a': Style(color: cs.primary, textDecoration: TextDecoration.none),
+          'strong': Style(fontWeight: FontWeight.w700),
+          'em': Style(fontStyle: FontStyle.italic),
           'blockquote': Style(
-            padding: HtmlPaddings.symmetric(horizontal: 12, vertical: 8),
-            border: Border(left: BorderSide(color: cs.primary, width: 3)),
-            margin: Margins.symmetric(vertical: 12),
+            fontSize: FontSize(fontSize - 1),
             color: cs.onSurfaceVariant,
-            backgroundColor: cs.primaryContainer.withValues(alpha: 0.22),
           ),
           'code': Style(
-            backgroundColor: cs.surfaceContainerHighest,
-            padding: HtmlPaddings.symmetric(horizontal: 4, vertical: 2),
             fontFamily: 'monospace',
+            fontFamilyFallback: const [
+              'Menlo',
+              'Monaco',
+              'Courier New',
+              'Courier',
+            ],
+            fontSize: FontSize(14),
+            color: cs.onSurface,
           ),
-          'pre': Style(
-            backgroundColor: cs.surfaceContainerHighest,
-            padding: HtmlPaddings.all(12),
-            margin: Margins.symmetric(vertical: 12),
-            whiteSpace: WhiteSpace.pre, // Use simple pre
+          'pre': Style(margin: Margins.symmetric(vertical: 12)),
+          'ul': Style(
+            padding: HtmlPaddings.only(left: 20),
+            margin: Margins.only(bottom: 14),
           ),
-          // 针对公式 span 的自定义样式（如果不仅仅是 class check）
+          'ol': Style(
+            padding: HtmlPaddings.only(left: 20),
+            margin: Margins.only(bottom: 14),
+          ),
+          // 针对公式 span 的自定义样式
           'tex-math': Style(fontSize: FontSize(fontSize)),
           'hr': Style(
             margin: Margins.symmetric(vertical: 24),
-            height: Height(0.5),
-            backgroundColor: Colors.grey.withValues(alpha: 0.3),
+            height: Height(1),
+            backgroundColor: cs.outlineVariant,
             border: Border.all(style: BorderStyle.none),
           ),
         },
@@ -373,6 +292,93 @@ class CustomHtml extends StatelessWidget {
       caseSensitive: false,
     ).firstMatch(style);
     return match == null ? null : double.tryParse(match.group(1)!);
+  }
+}
+
+/// 正文图片：保留显式宽高或样式尺寸，稳定占位与 8px 圆角统一裁切。
+class _ArticleImageExtension extends TagExtension {
+  final List<String> imageUrls;
+  final double fontSize;
+
+  _ArticleImageExtension({required this.imageUrls, required this.fontSize})
+    : super(tagsToExtend: {'img'}, builder: (ctx) => const SizedBox.shrink());
+
+  @override
+  InlineSpan build(ExtensionContext context) {
+    final attributes = context.attributes;
+    var url =
+        attributes['data-actualsrc'] ??
+        attributes['data-original'] ??
+        attributes['src'];
+
+    // 公式图片优先用 alt 文本渲染 LaTeX。
+    final isEquation =
+        attributes['class']?.contains('ee_img') == true ||
+        (url != null && url.contains('zhihu.com/equation'));
+    final isEmoji =
+        attributes['data-is-emoji'] == 'true' ||
+        attributes['class']?.contains('emoji') == true;
+    final altTex = attributes['alt'];
+
+    if (isEquation && altTex != null && altTex.isNotEmpty) {
+      String tex = altTex
+          .replaceAll('&amp;', '&')
+          .replaceAll('&lt;', '<')
+          .replaceAll('&gt;', '>')
+          .replaceAll(r'\\', r'\');
+
+      final currentFontSize = context.style?.fontSize?.value ?? fontSize;
+      final currentColor = context.style?.color;
+
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Math.tex(
+          tex,
+          textStyle: TextStyle(fontSize: currentFontSize, color: currentColor),
+          mathStyle: MathStyle.text,
+          onErrorFallback: (err) => Text(tex),
+        ),
+      );
+    }
+
+    if (url == null || url.isEmpty) {
+      return const WidgetSpan(child: SizedBox.shrink());
+    }
+
+    if (isEmoji) {
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: CachedNetworkImage(
+          imageUrl: url,
+          width: 20,
+          height: 20,
+          httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
+          placeholder: (context, url) => const SizedBox(width: 20, height: 20),
+          errorWidget: (context, url, error) => Text(altTex ?? ''),
+        ),
+      );
+    }
+
+    if (url.startsWith('//')) {
+      url = 'https:$url';
+    } else if (!url.startsWith('http')) {
+      return const WidgetSpan(child: SizedBox.shrink());
+    }
+
+    return WidgetSpan(
+      child: _ArticleHtmlImage(
+        url: url,
+        imageUrls: imageUrls,
+        sourceWidth:
+            CustomHtml._parseDimension(attributes['width']) ??
+            CustomHtml._parseDimension(attributes['data-rawwidth']) ??
+            CustomHtml._parseStyleDimension(attributes['style'], 'width'),
+        sourceHeight:
+            CustomHtml._parseDimension(attributes['height']) ??
+            CustomHtml._parseDimension(attributes['data-rawheight']) ??
+            CustomHtml._parseStyleDimension(attributes['style'], 'height'),
+      ),
+    );
   }
 }
 
@@ -488,4 +494,459 @@ class _ArticleHtmlImageState extends State<_ArticleHtmlImage> {
       },
     );
   }
+}
+
+/// 评论“查看图片/动图”缩略图链接：8px 圆角统一裁切，进入现有全屏画廊。
+class _CommentImageLinkExtension extends TagExtension {
+  final ColorScheme colorScheme;
+  final List<String> imageUrls;
+
+  _CommentImageLinkExtension({
+    required this.colorScheme,
+    required this.imageUrls,
+  }) : super(
+         tagsToExtend: {'a'},
+         builder: (ctx) {
+           final href = ctx.attributes['href'] ?? '';
+           return _CommentImageThumbnail(url: href, imageUrls: imageUrls);
+         },
+       );
+
+  @override
+  bool matches(ExtensionContext context) {
+    if (context.currentStep != CurrentStep.preparing &&
+        context.currentStep != CurrentStep.building) {
+      return false;
+    }
+    final href = context.attributes['href'];
+    if (href == null || href.isEmpty) return false;
+    final text = context.element?.text ?? '';
+    if (!(text.contains('查看图片') ||
+        text.contains('动图') ||
+        text.contains('图片'))) {
+      return false;
+    }
+    return _looksLikeImageUrl(href);
+  }
+
+  static bool _looksLikeImageUrl(String href) {
+    final lower = href.toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.gif') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.webp') ||
+        href.contains('zhimg.com');
+  }
+}
+
+class _CommentImageThumbnail extends StatelessWidget {
+  final String url;
+  final List<String> imageUrls;
+
+  const _CommentImageThumbnail({required this.url, required this.imageUrls});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => ImageViewer.show(context, url, imageUrls: imageUrls),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: url,
+            width: 120,
+            height: 120,
+            fit: BoxFit.cover,
+            httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
+            fadeInDuration: const Duration(milliseconds: 200),
+            fadeOutDuration: const Duration(milliseconds: 100),
+            placeholder: (context, url) => Container(
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            ),
+            errorWidget: (context, url, error) => Container(
+              width: 120,
+              height: 120,
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+              child: const Icon(Icons.broken_image),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 引用块：半透明底色、左侧 4px 强调边框与右侧圆角；内部保留链接、行内代码
+/// 与文字样式。
+class _BlockquoteExtension extends TagExtension {
+  final ColorScheme colorScheme;
+
+  _BlockquoteExtension({required this.colorScheme})
+    : super(
+        tagsToExtend: {'blockquote'},
+        builder: (ctx) {
+          final spans = ctx.inlineSpanChildren ?? const <InlineSpan>[];
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.25),
+                borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(8),
+                  bottomRight: Radius.circular(8),
+                ),
+                border: Border(
+                  left: BorderSide(color: colorScheme.primary, width: 4),
+                ),
+              ),
+              child: Text.rich(
+                TextSpan(
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1.6,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  children: spans,
+                ),
+              ),
+            ),
+          );
+        },
+      );
+
+  @override
+  bool matches(ExtensionContext context) {
+    if (context.currentStep != CurrentStep.preparing &&
+        context.currentStep != CurrentStep.building) {
+      return false;
+    }
+    return context.elementName == 'blockquote';
+  }
+}
+
+/// 整行代码块：全宽容器、8px 圆角、半透明背景与细边框、水平滚动与复制按钮。
+///
+/// 匹配整个 `<pre>` 元素并用自己的容器替换子树，因此 `<pre><code>` 不会出现
+/// 两层代码背景。
+class _CodeBlockExtension extends TagExtension {
+  _CodeBlockExtension()
+    : super(
+        tagsToExtend: {'pre'},
+        builder: (ctx) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: _CodeBlockWidget(text: ctx.element?.text ?? ''),
+        ),
+      );
+
+  @override
+  bool matches(ExtensionContext context) {
+    if (context.currentStep != CurrentStep.preparing &&
+        context.currentStep != CurrentStep.building) {
+      return false;
+    }
+    return context.elementName == 'pre';
+  }
+}
+
+class _CodeBlockWidget extends StatefulWidget {
+  final String text;
+
+  const _CodeBlockWidget({required this.text});
+
+  @override
+  State<_CodeBlockWidget> createState() => _CodeBlockWidgetState();
+}
+
+class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
+  bool _copied = false;
+
+  Future<void> _copy() async {
+    try {
+      await Clipboard.setData(ClipboardData(text: widget.text));
+    } catch (_) {
+      TritiumFeedback.error('复制失败', '无法写入剪贴板');
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _copied = true);
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    if (!mounted) return;
+    setState(() => _copied = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6)),
+      ),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 42, 12),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Text(
+                widget.text,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontFamilyFallback: const [
+                    'Menlo',
+                    'Monaco',
+                    'Courier New',
+                    'Courier',
+                  ],
+                  fontSize: 13,
+                  color: cs.onSurface,
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 5,
+            right: 5,
+            child: InkWell(
+              onTap: _copy,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(7),
+                child: Icon(
+                  _copied ? Icons.check_rounded : Icons.copy_rounded,
+                  size: 16,
+                  color: _copied ? cs.primary : cs.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 表格：宽表可横向滚动，首行表头底色与整表边框。
+class _ArticleTableExtension extends TagExtension {
+  _ArticleTableExtension()
+    : super(
+        tagsToExtend: {'table'},
+        builder: (ctx) => _ArticleTableWidget(
+          table: ctx.element,
+          textDirection: ctx.buildContext != null
+              ? Directionality.maybeOf(ctx.buildContext!)
+              : null,
+        ),
+      );
+
+  @override
+  bool matches(ExtensionContext context) {
+    if (context.currentStep != CurrentStep.preparing &&
+        context.currentStep != CurrentStep.building) {
+      return false;
+    }
+    return context.elementName == 'table';
+  }
+}
+
+class _ArticleTableWidget extends StatelessWidget {
+  final dom.Element? table;
+  final TextDirection? textDirection;
+
+  const _ArticleTableWidget({required this.table, this.textDirection});
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = _parseTableRows(table);
+    if (rows.isEmpty) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+
+    final columnCount = rows.fold<int>(
+      0,
+      (maxCount, row) => row.length > maxCount ? row.length : maxCount,
+    );
+    if (columnCount == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : MediaQuery.sizeOf(context).width;
+          final columnWidth = math.max(
+            112.0,
+            math.min(180.0, maxWidth / math.min(columnCount, 4)),
+          );
+          final tableWidth = columnWidth * columnCount;
+          final textDirection =
+              this.textDirection ?? Directionality.maybeOf(context);
+
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minWidth: maxWidth,
+                maxWidth: tableWidth > maxWidth ? tableWidth : maxWidth,
+              ),
+              child: Table(
+                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                border: TableBorder.all(color: cs.outlineVariant, width: 0.8),
+                columnWidths: {
+                  for (var i = 0; i < columnCount; i++)
+                    i: FixedColumnWidth(columnWidth),
+                },
+                children: [
+                  for (var rowIndex = 0; rowIndex < rows.length; rowIndex++)
+                    TableRow(
+                      decoration: BoxDecoration(
+                        color: rowIndex == 0
+                            ? cs.surfaceContainerHighest.withValues(alpha: 0.55)
+                            : Colors.transparent,
+                      ),
+                      children: [
+                        for (
+                          var cellIndex = 0;
+                          cellIndex < columnCount;
+                          cellIndex++
+                        )
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            child: Text(
+                              cellIndex < rows[rowIndex].length
+                                  ? rows[rowIndex][cellIndex]
+                                  : '',
+                              textDirection: textDirection,
+                              style: TextStyle(
+                                fontSize: 14,
+                                height: 1.45,
+                                color: cs.onSurface,
+                                fontWeight: (rowIndex == 0)
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  static List<List<String>> _parseTableRows(dom.Element? table) {
+    if (table == null) return const [];
+    final rows = <List<String>>[];
+    for (final tr in table.querySelectorAll('tr')) {
+      final cells = <String>[];
+      for (final child in tr.children) {
+        final tag = child.localName?.toLowerCase();
+        if (tag != 'td' && tag != 'th') continue;
+        final text = child.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+        final colSpan = int.tryParse(child.attributes['colspan'] ?? '') ?? 1;
+        cells.add(text);
+        for (var i = 1; i < colSpan.clamp(1, 12); i++) {
+          cells.add('');
+        }
+      }
+      if (cells.any((cell) => cell.isNotEmpty)) {
+        rows.add(cells);
+      }
+    }
+    return rows;
+  }
+}
+
+/// 行内代码扩展 — 使用 alphabetic baseline 对齐的半透明圆角胶囊，
+/// 避免背景叠加或上下错位；`<pre>` 内的 `<code>` 不匹配，防止双层背景。
+class InlineCodeExtension extends HtmlExtension {
+  final ColorScheme colorScheme;
+
+  const InlineCodeExtension({required this.colorScheme});
+
+  @override
+  Set<String> get supportedTags => {'code'};
+
+  @override
+  bool matches(ExtensionContext context) {
+    switch (context.currentStep) {
+      case CurrentStep.preparing:
+        // 只匹配 <code> 元素，且排除 <pre> 内的整行代码块。
+        if (context.elementName != 'code') return false;
+        var node = context.element?.parent;
+        while (node != null) {
+          if (node.localName?.toLowerCase() == 'pre') return false;
+          node = node.parent;
+        }
+        return true;
+      case CurrentStep.building:
+        return context.styledElement is _InlineCodeWrapperElement;
+      case CurrentStep.preStyling:
+      case CurrentStep.preProcessing:
+        return false;
+    }
+  }
+
+  @override
+  StyledElement prepare(
+    ExtensionContext context,
+    List<StyledElement> children,
+  ) {
+    return _InlineCodeWrapperElement(
+      child: context.parser.prepareFromExtension(
+        context,
+        children,
+        extensionsToIgnore: {this},
+      ),
+    );
+  }
+
+  @override
+  InlineSpan build(ExtensionContext context) {
+    final child = CssBoxWidget.withInlineSpanChildren(
+      children: context.inlineSpanChildren!,
+      style: context.style!,
+    );
+
+    return WidgetSpan(
+      alignment: PlaceholderAlignment.baseline,
+      baseline: TextBaseline.alphabetic,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _InlineCodeWrapperElement extends StyledElement {
+  _InlineCodeWrapperElement({required StyledElement child})
+    : super(
+        node: dom.Element.tag("inline-code-wrapper"),
+        style: Style(),
+        children: [child],
+        name: "[inline-code-wrapper]",
+      );
 }

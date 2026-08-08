@@ -1,5 +1,119 @@
 # 决策日志
 
+## 2026-08-08：统计值必须可空解析，未知值显示 “—”
+
+背景：多个页面用 `字段 ?? 0` 把缺失或解析失败的统计值伪装成真实 0。回答页底栏
+在正文尚未加载时短暂显示 0；热榜把眼睛图标绑定到 `follower_count` 冒充浏览量；
+`visit_count` 未加入 include 且与 `read_count` 的关系没有约定。
+
+决策：统计值统一走 `lib/utils/count_format.dart` 的可空解析与格式化：
+`parseCount` 只在字段存在且数值有效时返回 int，`formatCount` 对未知值输出 “—”。
+浏览量按 `visit_count` 优先、`read_count` 兜底。热榜删除虚假浏览量指标，热度改用
+`metrics_area.text`/`detail_text`，回答数使用 `answer_count`。
+
+后果：任何上游字段缺失或解析失败都表现为 “—” 或隐藏指标，而不是错误数字；
+“0” 只可能在接口明确返回 0 时出现。回答页底栏在正文加载前显示 “—”，加载后
+再切换为真实数值。
+
+合并复核补充：`NaN`、正负无穷和负数同样不是有效计数，必须拒绝；热榜字段需要
+同时兼容 `target` 与卡片顶层的 `metrics_area/detail_text/label_area/card_label`，
+不能因为只覆盖一种 envelope 又退回假指标。
+
+## 2026-08-08：链接能力采用 URL 归一化 + 类型化路由
+
+背景：旧 `ContentLinkService` 只解析带 scheme 的完整 URL，协议相对、站内相对
+路径、`link.zhihu.com` 跳转、`zhihu://` 单复数、appview/oia 等都不完整；HTML
+渲染用一个覆盖全部 `<a>` 的 TagExtension 把链接压扁成 `Text`，破坏了嵌套结构、
+文字样式和选择能力。真实场景下正文里的站内链接几乎不可用，还会把站内目标误交
+给系统浏览器。
+
+决策：拆成三层。
+1. **URL 归一化**：去除无效空白；支持 `//host` 协议相对、`/path` 与无前导斜线
+   的站内路径；解包 `link.zhihu.com/?target=`，限制最大解包深度并用已访问集合
+   防止循环重定向；拒绝 `javascript:`/`data:`/`file:` 等不安全 scheme。
+2. **类型化解析**：覆盖 question/answer 组合路径、article/p、pin、people/org
+   （机构复用用户页）、appview、oia/articles、zvideo/video 与 `zhihu://`
+   单复数 deep link。
+3. **导航策略**：有原生页的类型应用内打开；视频、话题、机构号、专栏等尚无原生
+   页的知乎目的地和真正的外部网站交给系统浏览器；无效链接统一反馈，不静默失败。
+
+HTML 侧不再用覆盖全部 `<a>` 的扩展：普通链接保留 flutter_html 的嵌套结构与
+`onLinkTap` 回调（同时保留文字选择），只有评论“查看图片/动图”链接使用专用
+缩略图扩展；`#anchor` 由 flutter_html 内置页内定位处理，找不到目标时不再交给
+浏览器或链接服务；没有 `href` 的蓝字不伪装成可点击。
+
+后果：正文、评论、楼中楼、历史记录与 Android 外部 Intent 全部复用同一套归一化
+与路由；新增原生内容类型时只需扩展类型化解析与路由表。
+
+合并复核补充：给无 scheme 的链接补 `https://www.zhihu.com/` 时必须保留原始
+query 和 fragment，否则 `link.zhihu.com?target=...` 会在归一化阶段丢失目标；所有
+依赖 ID 的站内类型只接受纯数字 ID，避免把畸形路径送进原生页。系统浏览器启动也
+必须捕获平台异常并显示统一错误反馈。
+
+## 2026-08-08：正文 HTML 语义组件与稳定布局共存
+
+背景：正文为防阅读进度跳动采用一次布局全部语义块（`SliverToBoxAdapter +
+Column`）的稳定高度模型，但渲染器把所有链接压成 `Text`，行内代码没有正确的
+baseline 对齐，代码块是默认浏览器样式，表格会横向溢出。
+
+决策：在保持稳定布局不变的前提下，用 flutter_html 的扩展体系替换缺语义：
+行内代码通过 `WidgetSpan`（`PlaceholderAlignment.baseline` + alphabetic）渲染为
+半透明圆角胶囊，`<pre>` 用专用扩展渲染为单容器代码块（8px 圆角、细边框、横向
+滚动、复制按钮带 1.2 秒勾选态），`<pre><code>` 不会出现两层背景；引用块、表格
+（宽表横向滚动）、列表、分割线、正文图片占位与错误态统一视觉。文本选择在页面
+级接入 `SelectionArea`：回答页包在整个 PageView 外层（SelectionArea 是 PageView
+的祖先时不会抢走横滑手势，这是 Flutter 文档化的手势仲裁行为），文章/想法/问题
+描述/评论则包在滚动视图外层。
+
+后果：稳定布局（阅读进度、标题时机、评论预加载）不受影响，同时获得可对齐
+Fourier（原 Auto Folo）的正文语义和系统文本选择。
+
+合并复核补充：宽表单元格宽度沿用 Fourier 的 112–180dp 约束，并以最多四列参与
+可视宽度计算，避免四列以上时产生负约束；代码块保留源码首尾空白。专栏封面比例
+统一使用 Flutter 的宽/高语义，优先接口尺寸，缺失时才解析实际图片尺寸；尺寸监听
+不释放由共享 ImageStream 管理的 `ImageInfo`。
+
+## 2026-08-08：首页三页 PageView 显式保活
+
+背景：主导航原来用 `_FadeIndexedStack` 淡入淡出，无法左右滑动；直接换
+PageView 后，离屏页面默认会被回收重建，重新请求数据并丢失滚动位置。
+
+决策：三个主页用 `AutomaticKeepAliveClientMixin` 的包装显式保活；离屏页面用
+`TickerMode` 暂停动画（保留状态），避免加载指示器空转；底部导航点击用
+`animateToPage` 动画切页，编程式切页期间抑制 `onPageChanged` 的中间页同步，
+滑动落定（`ScrollEndNotification`）后再以实际停靠页为准；重复点击当前导航
+按钮仍触发既有滚回顶部语义。
+
+后果：推荐/热榜不重复请求、不丢滚动位置；设置页的 Switch 等横向控件作为
+PageView 的子级保留自己的手势（子级先进入手势竞技场）。
+
+## 2026-08-08：回答分页所有权与 cursor 防循环
+
+背景：回答页只拿到问题页已经加载的 ID 快照，把这一批的末尾误认为全部回答
+末尾；从推荐页等只传入单个回答的入口进入时没有可继续的分页游标。
+
+决策：建立 `AnswerPager` 种子/状态模型（questionId、answerIds、nextUrl、
+sortBy），从问题页进入时把当前 ID 列表、下一页游标和排序方式一并传入，回答页
+接管后续分页；单回答入口先获取所属问题第一页并把当前回答保留在列表最前。
+追加页按 ID 去重；空页、重复 cursor、已消费 cursor 与服务器 `is_end` 都视为
+无进展并停止自动请求，加载失败保留可重试状态；追加数据不改变既有条目的索引，
+PageController 不跳页；滑动进入加载占位页不触发“已切换回答”的振动。
+
+后果：回答横滑可以一直滑到问题真正的末尾；分页失败不会永久卡死在假末尾。
+
+合并复核补充：当前回答无论是否已出现在补齐页中都必须移到种子列表首位；cursor
+只有请求成功后才记为已消费，失败时保留以便重试。刷新代次已经变化的旧响应直接
+丢弃，不得回写新一代请求的加载锁。
+
+## 2026-08-08：统一反馈入口替代散落的状态提示
+
+背景：`Get.snackbar`、`Get.rawSnackbar`、`SnackBar` 与仅状态用的
+`SmartDialog.showToast` 混用，风格不一致，图片保存成功也没有成功动画。
+
+决策：新增 `TritiumFeedback`（info/success/warning/error），顶部居中、SafeArea
+内显示、毛玻璃半透明胶囊、状态色圆形图标、从顶部滑入淡入退出反向动画、不拦截
+页面交互；全部状态反馈迁移到该入口，加载遮罩仍由 SmartDialog 自行控制。
+
 ## 2026-07-19：固定产品边界
 
 背景：旧工程包含关注、点赞和较复杂的回复入口，与当前阅读客户端定位不符。
@@ -18,9 +132,9 @@
 
 ## 2026-07-19：参考工程职责分离
 
-决策：Hydrogen 只参考功能模块和知乎接口，Auto Folo 只参考设计、维护架构与发布
+决策：Hydrogen 只参考功能模块和知乎接口，Fourier（当时名 Auto Folo）只参考设计、维护架构与发布
 流程。Tritium 不复制其产品业务源码，也不修改参考工程；经确认需要完全一致的基础交互
-可以复用 Auto Folo 已受控维护的上游开源实现，并在 Tritium 内独立测试和维护。目前
+可以复用 Fourier 已受控维护的上游开源实现，并在 Tritium 内独立测试和维护。目前
 下拉刷新状态机属于这一例外。
 
 ## 2026-07-19：发布必须可追溯
@@ -36,9 +150,9 @@
 
 后果：排障日志可以直接用于判断状态机，但仍不得要求用户提供 Cookie 或完整 URL。
 
-## 2026-07-19：与 Auto Folo 共享 Android 签名
+## 2026-07-19：与 Fourier（当时名 Auto Folo）共享 Android 签名
 
-决策：Tritium 的 GitHub Actions 复用 Auto Folo 的 Android keystore，通过 Tritium
+决策：Tritium 的 GitHub Actions 复用 Fourier 的 Android keystore，通过 Tritium
 仓库独立的四项 Secrets 注入；证书和密码不进入源码仓库。
 
 后果：两款应用的签名身份和密钥轮换相互关联，密钥泄露会同时影响两者。共享签名不
@@ -64,7 +178,7 @@ Git 仓库。参考目录不使用 submodule，不进入 Tritium 的依赖、构
 进度只写入 Tritium 本机，不同步知乎服务器。Tritium 已有原生只读页的链接内部
 跳转；其他知乎内容统一转换为 HTTPS 并由系统浏览器打开。
 
-决策：参考 Auto Folo 增加 1 像素阅读进度条，但以正文末尾而非整页最大滚动范围为
+决策：参考 Fourier 增加 1 像素阅读进度条，但以正文末尾而非整页最大滚动范围为
 终点，避免评论懒加载让进度倒退。文章、回答和想法复用同一阅读会话组件。
 
 后果：新增原生内容类型时必须同时补充链接解析、历史类型和标准 URL；不得借由链接
@@ -72,16 +186,16 @@ Git 仓库。参考目录不使用 submodule，不进入 Tritium 的依赖、构
 
 ## 2026-07-28 至 2026-07-29：导航玻璃和启动图标不得近似适配
 
-决策：主导航完整复用 Auto Folo 当前移动端玻璃表面的连续圆角、渐变、方向性边缘
-高光及内外阴影层次，不再用普通边框近似。Android 图标与 Auto Folo 一样只提供
+决策：主导航完整复用 Fourier 当前移动端玻璃表面的连续圆角、渐变、方向性边缘
+高光及内外阴影层次，不再用普通边框近似。Android 图标与 Fourier 一样只提供
 静态 `mipmap`，从源图直接做无内边距圆角裁剪；不再提供会被启动器二次裁切和缩放
 的 Adaptive Icon XML。
 
 排查过程：源文件 `assets/images/logo/icon.png` 本身符合预期，但 Android 设备显示
 类似“只取中央约 0.1…0.9 再撑满”的效果。这个范围只是用户帮助定位问题的近似描述，
-曾被错误当成精确映射并生成固定 10% 反向补偿；该方案随后立即撤销。对比 Auto Folo
+曾被错误当成精确映射并生成固定 10% 反向补偿；该方案随后立即撤销。对比 Fourier
 最终资源后确认，真正差异是 Tritium 的 `mipmap-anydpi-v26/ic_launcher.xml` 会让
-Android 8+ 改走 108dp Adaptive Icon 图层，而 Auto Folo 只有静态 mipmap。因此最终
+Android 8+ 改走 108dp Adaptive Icon 图层，而 Fourier 只有静态 mipmap。因此最终
 删除 adaptive XML、前景、背景和专用颜色资源，而不是保留任何经验缩放。
 
 后果：以后更换 `assets/images/logo/icon.png` 后运行
@@ -92,7 +206,7 @@ Android 8+ 改走 108dp Adaptive Icon 图层，而 Auto Folo 只有静态 mipmap
 
 背景：多图长正文通过 `SliverList` 按需创建语义块时，尚未出现的块与图片真实高度
 会持续修正评论锚点位置。阅读进度以该锚点作为正文终点，因此分母变化会造成进度条
-前后跳动；这与 Auto Folo 曾经依赖动态 `maxScrollExtent` 时的问题属于同一类。
+前后跳动；这与 Fourier 曾经依赖动态 `maxScrollExtent` 时的问题属于同一类。
 
 决策：文章和回答共用的 `ChunkedHtmlSliver` 保留后台解析、语义分块和短块合并，但
 改用 `SliverToBoxAdapter + Column` 一次布局所有块。图片继续使用显式比例或合理

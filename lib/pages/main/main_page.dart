@@ -9,9 +9,12 @@ import '../home/recommend_page.dart';
 import '../settings/settings_page.dart';
 import 'main_controller.dart';
 
-/// Android 主框架直接呈现两个内容入口和设置，避免额外占用顶部空间。
+/// Android 主框架：三个主页（推荐/热榜/设置）通过跟手的 PageView 左右滑动切换，
+/// 底部导航点击使用动画切页；三个页面显式保活，切换后不重新请求、不丢滚动位置。
 class MainPage extends StatefulWidget {
-  const MainPage({super.key});
+  final List<Widget>? pagesForTesting;
+
+  const MainPage({super.key, @visibleForTesting this.pagesForTesting});
 
   @override
   State<MainPage> createState() => _MainPageState();
@@ -19,14 +22,66 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> {
   late final MainController controller;
+  late final PageController _pageController;
+  late final List<Widget> _pages;
 
-  static const _pages = <Widget>[RecommendPage(), HotPage(), SettingsPage()];
+  /// 编程式切页（底部导航点击）进行中：期间忽略 onPageChanged 的中间页同步。
+  bool _programmaticJump = false;
 
   @override
   void initState() {
     super.initState();
     controller = Get.put(MainController());
-    controller.currentIndex.value = Pref.defaultHomeTab.clamp(0, 1);
+    final initialIndex = Pref.defaultHomeTab.clamp(0, 1);
+    controller.currentIndex.value = initialIndex;
+    _pageController = PageController(initialPage: initialIndex);
+    _pages =
+        (widget.pagesForTesting ??
+                const <Widget>[RecommendPage(), HotPage(), SettingsPage()])
+            .map((page) => _KeepAlivePage(child: page))
+            .toList(growable: false);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _onPageChanged(int index) {
+    // 滑动选中：同步导航栏与 AppBar 标题。
+    if (_programmaticJump) return;
+    if (controller.currentIndex.value != index) {
+      controller.currentIndex.value = index;
+    }
+  }
+
+  bool _handleScrollEnd(ScrollEndNotification notification) {
+    if (notification.metrics.axis != Axis.horizontal) return false;
+    // 滑动或动画落定后，以实际停靠页为准。
+    _programmaticJump = false;
+    final index =
+        _pageController.page?.round() ?? controller.currentIndex.value;
+    if (controller.currentIndex.value != index) {
+      controller.currentIndex.value = index;
+    }
+    return false;
+  }
+
+  void _onNavigationSelected(int index) {
+    if (controller.currentIndex.value == index) {
+      // 重复点击当前导航按钮滚回顶部。
+      controller.changeIndex(index);
+      return;
+    }
+    // 点击选中：更新选中态并以动画切页。
+    controller.currentIndex.value = index;
+    _programmaticJump = true;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -47,16 +102,28 @@ class _MainPageState extends State<MainPage> {
             ),
           ),
         ),
-        body: Obx(
-          () => _FadeIndexedStack(
-            index: controller.currentIndex.value,
-            children: _pages,
+        body: NotificationListener<ScrollEndNotification>(
+          onNotification: _handleScrollEnd,
+          child: Obx(
+            () => PageView(
+              controller: _pageController,
+              onPageChanged: _onPageChanged,
+              children: [
+                for (var i = 0; i < _pages.length; i++)
+                  // 离屏页面暂停动画（保留状态），避免加载指示器等持续动画
+                  // 在不可见时空转。
+                  TickerMode(
+                    enabled: controller.currentIndex.value == i,
+                    child: _pages[i],
+                  ),
+              ],
+            ),
           ),
         ),
         bottomNavigationBar: Obx(
           () => _FloatingNavigation(
             selectedIndex: controller.currentIndex.value,
-            onSelected: controller.changeIndex,
+            onSelected: _onNavigationSelected,
           ),
         ),
       ),
@@ -64,29 +131,25 @@ class _MainPageState extends State<MainPage> {
   }
 }
 
-class _FadeIndexedStack extends StatelessWidget {
-  final int index;
-  final List<Widget> children;
+/// 三个主页显式保活：离开视口后仍保留滚动位置与已加载数据。
+class _KeepAlivePage extends StatefulWidget {
+  final Widget child;
 
-  const _FadeIndexedStack({required this.index, required this.children});
+  const _KeepAlivePage({required this.child});
+
+  @override
+  State<_KeepAlivePage> createState() => _KeepAlivePageState();
+}
+
+class _KeepAlivePageState extends State<_KeepAlivePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: List.generate(children.length, (childIndex) {
-        final active = childIndex == index;
-        return IgnorePointer(
-          ignoring: !active,
-          child: AnimatedOpacity(
-            opacity: active ? 1 : 0,
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeInOutCubic,
-            child: TickerMode(enabled: active, child: children[childIndex]),
-          ),
-        );
-      }),
-    );
+    super.build(context);
+    return widget.child;
   }
 }
 

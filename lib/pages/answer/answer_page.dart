@@ -13,6 +13,7 @@ import '../../common/widgets/error_widget.dart' as custom;
 import '../../router/app_pages.dart';
 import '../../common/widgets/html/chunked_html_sliver.dart';
 import '../../common/widgets/html/html_chunker.dart';
+import '../../utils/count_format.dart';
 import '../../utils/storage.dart';
 import '../../common/widgets/inline_comment_widget.dart';
 import '../../common/widgets/blur_container.dart';
@@ -21,6 +22,7 @@ import '../../utils/comment_preload.dart';
 import '../../common/widgets/content_actions.dart';
 import '../../common/widgets/reading_progress.dart';
 import '../../services/reading_history_service.dart';
+import 'answer_pager.dart';
 
 /// 回答详情页 (容器)
 class AnswerPage extends StatefulWidget {
@@ -42,11 +44,9 @@ class AnswerPage extends StatefulWidget {
 }
 
 class _AnswerPageState extends State<AnswerPage> {
-  String? _questionId;
+  late final AnswerPager _pager;
   String? _initialAnswerId;
 
-  // 回答列表状态
-  List<String> _answerIds = [];
   late final PageController _pageController;
   final Map<String, GlobalKey> _commentKeys = {};
   final Map<String, GlobalKey<_AnswerSinglePageState>> _answerPageKeys = {};
@@ -64,7 +64,6 @@ class _AnswerPageState extends State<AnswerPage> {
   late final ValueNotifier<int> _settledPageIndexNotifier;
   final ValueNotifier<double> _readingProgressNotifier = ValueNotifier(0);
   final ValueNotifier<bool> _readingSeekableNotifier = ValueNotifier(false);
-  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -72,10 +71,9 @@ class _AnswerPageState extends State<AnswerPage> {
     final arguments = Get.arguments as Map<String, dynamic>?;
 
     // 优先使用 Constructor 参数，其次使用 Get.arguments
-    _questionId = widget.questionId ?? arguments?['questionId'];
+    final questionId = widget.questionId ?? arguments?['questionId'];
     _initialAnswerId = widget.answerId ?? arguments?['answerId'];
 
-    // 初始化列表
     final passedIds =
         widget.answerIds ??
         (arguments?['answerIds'] as List?)
@@ -83,30 +81,50 @@ class _AnswerPageState extends State<AnswerPage> {
             .whereType<String>()
             .toList();
 
-    if (passedIds != null) {
-      _answerIds = passedIds;
-    } else if (_initialAnswerId != null) {
-      // 只有单个 ID
-      _answerIds = [_initialAnswerId!];
-    }
+    final sortBy = (arguments?['sortBy'] as String?) ?? Pref.defaultAnswerSort;
+    final nextUrl = (arguments?['nextUrl'] as String?)?.trim().nullIfEmpty;
+    final isEnd = arguments?['isEnd'] == true;
+
+    final seedIds = passedIds != null && passedIds.isNotEmpty
+        ? passedIds
+        : <String>[?_initialAnswerId];
+
+    _pager = AnswerPager(
+      questionId: questionId?.toString(),
+      answerIds: seedIds,
+      sortBy: sortBy,
+      nextUrl: nextUrl,
+      isEnd: isEnd,
+      loader:
+          ({
+            required String questionId,
+            required String sortBy,
+            String? nextUrl,
+          }) => QuestionHttp.getQuestionAnswers(
+            questionId: questionId,
+            sortBy: sortBy,
+            nextUrl: nextUrl,
+          ),
+    );
 
     // 计算初始索引
+    _currentIndex = 0;
     if (_initialAnswerId != null) {
-      final index = _answerIds.indexOf(_initialAnswerId!);
+      final index = _pager.answerIds.indexOf(_initialAnswerId!);
       _currentIndex = index >= 0 ? index : 0;
-    } else if (_answerIds.isNotEmpty) {
-      _currentIndex = widget.initialIndex.clamp(0, _answerIds.length - 1);
+    } else if (_pager.answerIds.isNotEmpty) {
+      _currentIndex = widget.initialIndex.clamp(0, _pager.answerIds.length - 1);
     }
     _pageController = PageController(initialPage: _currentIndex);
     _questionTitleNotifier = ValueNotifier('回答详情');
-    _voteupCountNotifier = ValueNotifier(0);
-    _commentCountNotifier = ValueNotifier(0);
+    _voteupCountNotifier = ValueNotifier(null);
+    _commentCountNotifier = ValueNotifier(null);
     _settledPageIndexNotifier = ValueNotifier(_currentIndex);
     _syncChromeForCurrentAnswer();
 
-    // 如果列表仅包含单个（且可能是从推荐页进来的），尝试获取完整列表
-    if (_answerIds.length <= 1 && _questionId != null) {
-      _fetchQuestionAnswers();
+    // 从推荐页等只传入单个回答的入口进入时，补齐所属问题第一页。
+    if (_pager.needsFirstPageLoad && _initialAnswerId != null) {
+      _loadFirstPage(_initialAnswerId!);
     }
 
     // 初始预加载相邻回答
@@ -117,7 +135,7 @@ class _AnswerPageState extends State<AnswerPage> {
 
   @override
   void dispose() {
-    _loadGeneration++;
+    _pager.dispose();
     _pageController.dispose();
     _showTitleNotifier.dispose();
     _questionTitleNotifier.dispose();
@@ -129,70 +147,53 @@ class _AnswerPageState extends State<AnswerPage> {
     super.dispose();
   }
 
-  /// 获取问题下的回答列表
-  Future<void> _fetchQuestionAnswers() async {
-    if (_questionId == null) return;
+  bool get _hasPlaceholderPage =>
+      _pager.hasMore || _pager.isLoading || _pager.hasError;
 
-    final generation = ++_loadGeneration;
-    final result = await QuestionHttp.getQuestionAnswers(
-      questionId: _questionId!,
-    );
+  int get _pageCount => _pager.answerIds.length + (_hasPlaceholderPage ? 1 : 0);
 
-    if (!mounted || generation != _loadGeneration) return;
+  String? get _currentAnswerId {
+    if (_currentIndex < _pager.answerIds.length) {
+      return _pager.answerIds[_currentIndex];
+    }
+    return _pager.answerIds.isEmpty ? null : _pager.answerIds.last;
+  }
 
-    if (result is Success<Map<String, dynamic>>) {
-      final data = result.response['data'];
-      if (data is List) {
-        final ids = data
-            .whereType<Map>()
-            .map((e) => e['id']?.toString())
-            .whereType<String>()
-            .toList();
-
-        if (ids.isNotEmpty) {
-          // 确保当前正在查看的 ID 在列表中
-          final currentId = _answerIds.isNotEmpty
-              ? _answerIds[_currentIndex]
-              : _initialAnswerId;
-
-          if (currentId != null && !ids.contains(currentId)) {
-            ids.insert(0, currentId);
-          }
-
-          // 更新列表和索引
-          setState(() {
-            _answerIds = ids;
-            if (currentId != null) {
-              final newIndex = _answerIds.indexOf(currentId);
-              _currentIndex = newIndex >= 0 ? newIndex : 0;
-            }
-            // 预加载
-            _preloadNeighbors(_currentIndex);
-            // 预加载第一条（如果是热门/首位）
-            if (_answerIds.isNotEmpty) {
-              AnswerHttp.preload(_answerIds.first);
-            }
-          });
-          _syncChromeForCurrentAnswer();
-          _settledPageIndexNotifier.value = _currentIndex;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && _pageController.hasClients) {
-              _pageController.jumpToPage(_currentIndex);
-            }
-          });
+  Future<void> _loadFirstPage(String currentAnswerId) async {
+    await _pager.loadFirstPage(currentAnswerId);
+    if (!mounted) return;
+    setState(() {});
+    if (_pager.answerIds.isNotEmpty) {
+      final newIndex = _pager.answerIds.indexOf(currentAnswerId);
+      final targetIndex = newIndex >= 0 ? newIndex : 0;
+      _currentIndex = targetIndex;
+      _settledPageIndexNotifier.value = targetIndex;
+      _syncChromeForCurrentAnswer();
+      _preloadNeighbors(targetIndex);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _pageController.hasClients) {
+          _pageController.jumpToPage(targetIndex);
         }
-      }
+      });
     }
   }
 
-  void _preloadNeighbors(int index) {
-    if (_answerIds.isEmpty) return;
+  Future<void> _loadNextPage() async {
+    await _pager.loadNextPage();
+    if (!mounted) return;
+    setState(() {});
+    _preloadNeighbors(_currentIndex);
+  }
 
-    if (index + 1 < _answerIds.length) {
-      _preloadAnswer(_answerIds[index + 1]);
+  void _preloadNeighbors(int index) {
+    final ids = _pager.answerIds;
+    if (ids.isEmpty) return;
+
+    if (index + 1 < ids.length) {
+      _preloadAnswer(ids[index + 1]);
     }
     if (index - 1 >= 0) {
-      _preloadAnswer(_answerIds[index - 1]);
+      _preloadAnswer(ids[index - 1]);
     }
   }
 
@@ -214,7 +215,11 @@ class _AnswerPageState extends State<AnswerPage> {
     if (index == _currentIndex) return;
     _currentIndex = index;
     _hasPendingPageTransition = true;
-    if (Pref.enableSwipeHaptics) HapticFeedback.selectionClick();
+    // 触觉反馈只在跨过、松手将进入另一篇真实回答的阈值触发；
+    // 加载占位页不能触发“已切换回答”的振动。
+    if (index < _pager.answerIds.length && Pref.enableSwipeHaptics) {
+      HapticFeedback.selectionClick();
+    }
   }
 
   bool _handlePageScrollEnd(ScrollEndNotification notification) {
@@ -228,23 +233,39 @@ class _AnswerPageState extends State<AnswerPage> {
       _syncChromeForCurrentAnswer();
       _settledPageIndexNotifier.value = _currentIndex;
       _preloadNeighbors(_currentIndex);
+      _handlePaginationForIndex(_currentIndex);
     });
     return false;
   }
 
+  void _handlePaginationForIndex(int index) {
+    if (index >= _pager.answerIds.length) {
+      // 滑入加载占位页：空闲时立即拉取下一页，失败保留可重试状态。
+      if (!_pager.isLoading && !_pager.hasError) {
+        _loadNextPage();
+      }
+      return;
+    }
+    // 距离列表末尾约 2 项时预取下一页。
+    if (_pager.shouldPrefetch(index)) {
+      _loadNextPage();
+    }
+  }
+
   void _syncChromeForCurrentAnswer([Map<String, dynamic>? loadedData]) {
-    if (_answerIds.isEmpty) return;
-    final answerId = _answerIds[_currentIndex];
+    final answerId = _currentAnswerId;
+    if (answerId == null) return;
     final data = loadedData ?? AnswerHttp.cache[answerId];
     _questionTitleNotifier.value =
         data?['question']?['title']?.toString() ?? '回答详情';
-    _voteupCountNotifier.value = data?['voteup_count'] ?? 0;
-    _commentCountNotifier.value = data?['comment_count'] ?? 0;
+    // 正文尚未加载时不得短暂显示 0；使用 null（UI 显示 “—”）。
+    _voteupCountNotifier.value = data?['voteup_count'];
+    _commentCountNotifier.value = data?['comment_count'];
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_answerIds.isEmpty) {
+    if (_pager.answerIds.isEmpty && !_hasPlaceholderPage) {
       return const Scaffold(body: LoadingWidget(msg: '加载中...'));
     }
 
@@ -280,82 +301,98 @@ class _AnswerPageState extends State<AnswerPage> {
             valueListenable: _settledPageIndexNotifier,
             builder: (context, index, child) => ContentActionsMenu(
               title: _questionTitleNotifier.value,
-              url: 'https://www.zhihu.com/answer/${_answerIds[index]}',
+              url: 'https://www.zhihu.com/answer/${_safeActionId(index)}',
             ),
           ),
         ],
       ),
-      body: TritiumReadingProgressOverlay(
-        progress: _readingProgressNotifier,
-        seekable: _readingSeekableNotifier,
-        onSeek: (progress) {
-          if (_answerIds.isEmpty) return;
-          _answerPageKeys[_answerIds[_currentIndex]]?.currentState
-              ?.seekToProgress(progress);
-        },
-        child: NotificationListener<ScrollEndNotification>(
-          onNotification: _handlePageScrollEnd,
-          child: PageView.builder(
-            controller: _pageController,
-            allowImplicitScrolling: true,
-            itemCount: _answerIds.length,
-            onPageChanged: _onPageChanged,
-            itemBuilder: (context, index) {
-              final answerId = _answerIds[index];
-              final commentKey = _commentKeys.putIfAbsent(
-                answerId,
-                GlobalKey.new,
-              );
-              final answerPageKey = _answerPageKeys.putIfAbsent(
-                answerId,
-                GlobalKey<_AnswerSinglePageState>.new,
-              );
-              return _AnswerSinglePage(
-                key: answerPageKey,
-                answerId: answerId,
-                questionId: _questionId,
-                commentsKey: commentKey,
-                pageIndex: index,
-                settledPageIndexListenable: _settledPageIndexNotifier,
-                initialData: AnswerHttp.cache.containsKey(answerId)
-                    ? AnswerHttp.cache[answerId]
-                    : null,
-                onQuestionIdLoaded: (qId) {
-                  if (_questionId == null && qId.isNotEmpty) {
-                    _questionId = qId;
-                    _fetchQuestionAnswers();
-                  }
-                },
-                onDataLoaded: (data) {
-                  if (!_hasPendingPageTransition &&
-                      _answerIds[_currentIndex] == answerId) {
-                    _syncChromeForCurrentAnswer(data);
-                  }
-                },
-                onTitleVisibilityChanged: (visible) {
-                  if (_settledPageIndexNotifier.value == index &&
-                      _showTitleNotifier.value != visible) {
-                    _showTitleNotifier.value = visible;
-                  }
-                },
-                onContentReady: () {
-                  _contentReadyAnswerIds.add(answerId);
-                  if (_pendingCommentAnswerId == answerId) {
-                    _scrollToComments(answerId);
-                  }
-                },
-                onReadingProgressChanged: (progress) {
-                  if (_settledPageIndexNotifier.value == index) {
-                    _readingProgressNotifier.value = progress;
-                  }
-                },
-                onReadingSeekableChanged: (seekable) {
-                  if (_settledPageIndexNotifier.value == index) {
-                    _readingSeekableNotifier.value = seekable;
-                  }
-                },
-              );
-            },
+      body: SelectionArea(
+        child: TritiumReadingProgressOverlay(
+          progress: _readingProgressNotifier,
+          seekable: _readingSeekableNotifier,
+          onSeek: (progress) {
+            final answerId = _currentAnswerId;
+            if (answerId == null) return;
+            _answerPageKeys[answerId]?.currentState?.seekToProgress(progress);
+          },
+          child: NotificationListener<ScrollEndNotification>(
+            onNotification: _handlePageScrollEnd,
+            child: PageView.builder(
+              controller: _pageController,
+              allowImplicitScrolling: true,
+              itemCount: _pageCount,
+              onPageChanged: _onPageChanged,
+              itemBuilder: (context, index) {
+                // 加载占位页：预取下一页的过渡状态，不渲染回答正文。
+                if (index >= _pager.answerIds.length) {
+                  return _LoadingAnswerPlaceholder(
+                    hasError: _pager.hasError,
+                    isLoading: _pager.isLoading,
+                    onRetry: () {
+                      _pager.clearError();
+                      setState(() {});
+                      _loadNextPage();
+                    },
+                  );
+                }
+                final answerId = _pager.answerIds[index];
+                final commentKey = _commentKeys.putIfAbsent(
+                  answerId,
+                  GlobalKey.new,
+                );
+                final answerPageKey = _answerPageKeys.putIfAbsent(
+                  answerId,
+                  GlobalKey<_AnswerSinglePageState>.new,
+                );
+                return _AnswerSinglePage(
+                  key: answerPageKey,
+                  answerId: answerId,
+                  questionId: _pager.questionId,
+                  commentsKey: commentKey,
+                  pageIndex: index,
+                  settledPageIndexListenable: _settledPageIndexNotifier,
+                  initialData: AnswerHttp.cache.containsKey(answerId)
+                      ? AnswerHttp.cache[answerId]
+                      : null,
+                  onQuestionIdLoaded: (qId) {
+                    if (_pager.questionId == null && qId.isNotEmpty) {
+                      _pager.questionId = qId;
+                      if (_pager.needsFirstPageLoad) {
+                        _loadFirstPage(answerId);
+                      }
+                    }
+                  },
+                  onDataLoaded: (data) {
+                    if (!_hasPendingPageTransition &&
+                        _currentAnswerId == answerId) {
+                      _syncChromeForCurrentAnswer(data);
+                    }
+                  },
+                  onTitleVisibilityChanged: (visible) {
+                    if (_settledPageIndexNotifier.value == index &&
+                        _showTitleNotifier.value != visible) {
+                      _showTitleNotifier.value = visible;
+                    }
+                  },
+                  onContentReady: () {
+                    _contentReadyAnswerIds.add(answerId);
+                    if (_pendingCommentAnswerId == answerId) {
+                      _scrollToComments(answerId);
+                    }
+                  },
+                  onReadingProgressChanged: (progress) {
+                    if (_settledPageIndexNotifier.value == index) {
+                      _readingProgressNotifier.value = progress;
+                    }
+                  },
+                  onReadingSeekableChanged: (seekable) {
+                    if (_settledPageIndexNotifier.value == index) {
+                      _readingSeekableNotifier.value = seekable;
+                    }
+                  },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -372,7 +409,7 @@ class _AnswerPageState extends State<AnswerPage> {
               valueListenable: _voteupCountNotifier,
               builder: (context, count, child) => _ActionButton(
                 icon: Icons.thumb_up_outlined,
-                label: _formatCount(count),
+                label: formatCount(count),
               ),
             ),
             const SizedBox(width: 16),
@@ -380,14 +417,23 @@ class _AnswerPageState extends State<AnswerPage> {
               valueListenable: _commentCountNotifier,
               builder: (context, count, child) => _ActionButton(
                 icon: Icons.chat_bubble_outline_rounded,
-                label: _formatCount(count),
-                onTap: () => _scrollToComments(_answerIds[_currentIndex]),
+                label: formatCount(count),
+                onTap: () {
+                  final answerId = _currentAnswerId;
+                  if (answerId != null) _scrollToComments(answerId);
+                },
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _safeActionId(int index) {
+    final ids = _pager.answerIds;
+    if (ids.isEmpty) return '';
+    return ids[index.clamp(0, ids.length - 1)];
   }
 
   void _scrollToComments(String answerId) {
@@ -405,17 +451,61 @@ class _AnswerPageState extends State<AnswerPage> {
       curve: Curves.easeOutCubic,
     );
   }
+}
 
-  String _formatCount(dynamic count) {
-    if (count == null) return '0';
-    final num = count is int ? count : int.tryParse(count.toString()) ?? 0;
-    if (num >= 10000) {
-      return '${(num / 10000).toStringAsFixed(1)}万';
-    }
-    if (num >= 1000) {
-      return '${(num / 1000).toStringAsFixed(1)}k';
-    }
-    return num.toString();
+/// 加载占位页：预取中的过渡状态，绝不渲染成“另一篇回答”。
+class _LoadingAnswerPlaceholder extends StatelessWidget {
+  final bool hasError;
+  final bool isLoading;
+  final VoidCallback onRetry;
+
+  const _LoadingAnswerPlaceholder({
+    required this.hasError,
+    required this.isLoading,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasError) ...[
+            Icon(
+              Icons.cloud_off_outlined,
+              size: 36,
+              color: colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '加载失败',
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 10),
+            FilledButton.tonal(onPressed: onRetry, child: const Text('点击重试')),
+          ] else if (isLoading)
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -728,7 +818,6 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
 
       final content = data['content'] ?? data['detail'] ?? '';
       final excerpt = data['excerpt'] ?? '';
-      // Parent 负责 BottomBar，这里不需要 voteup
 
       final questionTitle = question?['title']?.toString() ?? '回答详情';
       final authorName = author?['name'] ?? '匿名用户';
@@ -928,4 +1017,8 @@ class _ActionButton extends StatelessWidget {
       child: content,
     );
   }
+}
+
+extension on String {
+  String? get nullIfEmpty => isEmpty ? null : this;
 }

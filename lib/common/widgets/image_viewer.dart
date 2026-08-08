@@ -5,11 +5,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
-import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'app_chrome.dart';
+import 'feedback_toast.dart';
 import 'interactiveviewer_gallery/interactive_viewer_boundary.dart';
 
 /// 正文图片画廊：同文图片翻页、双击/双指缩放、下拉退出和长按操作。
@@ -216,7 +216,7 @@ class _ImageViewerState extends State<ImageViewer>
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: _currentUrl));
                   Navigator.pop(sheetContext);
-                  Get.snackbar('已复制', '图片链接已复制');
+                  TritiumFeedback.success('已复制', '图片链接已复制');
                 },
               ),
             ],
@@ -234,9 +234,9 @@ class _ImageViewerState extends State<ImageViewer>
         Uint8List.fromList(bytes),
         name: 'tritium_${DateTime.now().millisecondsSinceEpoch}',
       );
-      Get.snackbar('保存成功', '图片已保存到系统相册');
+      TritiumFeedback.success('保存成功', '图片已保存到系统相册');
     } catch (_) {
-      Get.snackbar('保存失败', '请检查相册权限或网络连接');
+      TritiumFeedback.error('保存失败', '请检查相册权限或网络连接');
     }
   }
 
@@ -249,7 +249,7 @@ class _ImageViewerState extends State<ImageViewer>
       await file.writeAsBytes(bytes, flush: true);
       await Share.shareXFiles([XFile(file.path)]);
     } catch (_) {
-      Get.snackbar('分享失败', '无法准备图片文件');
+      TritiumFeedback.error('分享失败', '无法准备图片文件');
     }
   }
 

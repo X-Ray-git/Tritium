@@ -1,10 +1,15 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../router/app_pages.dart';
 import '../../http/content_http.dart';
+import '../../utils/count_format.dart';
 
 /// 热榜卡片组件
+///
+/// 热度展示接口可靠提供的 `metrics_area.text` / `detail_text`，回答数展示
+/// `answer_count`；不再用 `follower_count` 冒充浏览量，未知统计值显示 “—”。
 class HotCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final int index;
@@ -20,7 +25,6 @@ class HotCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     final target = data['target'] as Map<String, dynamic>?;
-    final detailText = data['detail_text'] ?? '';
 
     if (target == null) {
       return const SizedBox.shrink();
@@ -61,24 +65,50 @@ class HotCard extends StatelessWidget {
       excerpt = target['excerpt_area']?['text'] ?? '';
     }
 
-    // 获取统计信息
-    dynamic answerCount = target['answer_count'];
-    dynamic followerCount = target['follower_count'];
+    // 热度：优先 metrics_area.text，兼容 detail_text。
+    final metricsText =
+        (target['metrics_area'] as Map?)?['text']?.toString() ??
+        (data['metrics_area'] as Map?)?['text']?.toString() ??
+        '';
+    final heatText = metricsText.isNotEmpty
+        ? metricsText
+        : target['detail_text']?.toString() ??
+              data['detail_text']?.toString() ??
+              '';
 
-    // 尝试从 metrics_area 获取
-    if (answerCount == null && target['metrics_area'] != null) {
-      final metrics = target['metrics_area'] as Map<String, dynamic>;
-      // "text": "23 万热度"
-      final text = metrics['text'] ?? '';
-      if (text.isNotEmpty) {
-        // 将热度作为关注数显示（这就是 detail_text）
-        // 如果这里获取不到数字，可以保持为 null
-      }
+    // 回答数：target 或 feed_specific 中可靠的数值。
+    var answerCount = parseCount(target['answer_count']);
+    if (answerCount == null) {
+      final feedSpecific = data['feed_specific'] as Map?;
+      answerCount = parseCount(feedSpecific?['answer_count']);
     }
 
-    // 尝试从 feed_specific 获取回答数
-    if (data['feed_specific'] != null) {
-      answerCount ??= data['feed_specific']['answer_count'];
+    // “新/热”标签。
+    final rawCardLabel = data['card_label'];
+    final labelText =
+        (target['label_area'] as Map?)?['text']?.toString() ??
+        (data['label_area'] as Map?)?['text']?.toString() ??
+        (rawCardLabel is Map
+            ? rawCardLabel['text']?.toString()
+            : rawCardLabel?.toString()) ??
+        '';
+
+    // 缩略图：image_area。
+    String? imageUrl;
+    final imageArea =
+        (target['image_area'] as Map?) ?? (data['image_area'] as Map?);
+    if (imageArea != null) {
+      imageUrl =
+          imageArea['url']?.toString() ??
+          imageArea['image_url']?.toString() ??
+          (imageArea['images'] is List
+              ? (imageArea['images'] as List)
+                    .firstWhere(
+                      (item) => item is Map && item['url'] != null,
+                      orElse: () => const <String, dynamic>{},
+                    )['url']
+                    ?.toString()
+              : null);
     }
 
     // 排名样式
@@ -96,11 +126,12 @@ class HotCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: InkWell(
-        onTap: () {
-          if (questionId != null) {
-            Get.toNamed(Routes.question, arguments: {'questionId': questionId});
-          }
-        },
+        onTap: questionId == null
+            ? null
+            : () => Get.toNamed(
+                Routes.question,
+                arguments: {'questionId': questionId},
+              ),
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -143,6 +174,10 @@ class HotCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (labelText.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      _HotLabelChip(text: labelText, colorScheme: colorScheme),
+                    ],
                     const SizedBox(height: 8),
                     // 摘要
                     if (excerpt.isNotEmpty)
@@ -159,31 +194,23 @@ class HotCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    // 热度信息
+                    // 热度与回答数
                     Row(
                       children: [
-                        if (detailText.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colorScheme.errorContainer.withValues(
-                                alpha: 0.5,
-                              ),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
+                        if (heatText.isNotEmpty)
+                          Expanded(
                             child: Text(
-                              detailText,
+                              heatText,
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 12,
                                 color: colorScheme.error,
                                 fontWeight: FontWeight.w500,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        const Spacer(),
+                        if (heatText.isNotEmpty) const SizedBox(width: 12),
                         Icon(
                           Icons.question_answer_outlined,
                           size: 14,
@@ -191,21 +218,7 @@ class HotCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          _formatCount(answerCount),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Icon(
-                          Icons.visibility_outlined,
-                          size: 14,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _formatCount(followerCount),
+                          formatCount(answerCount),
                           style: TextStyle(
                             fontSize: 12,
                             color: colorScheme.onSurfaceVariant,
@@ -216,22 +229,80 @@ class HotCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (imageUrl != null && imageUrl.isNotEmpty) ...[
+                const SizedBox(width: 12),
+                _HotThumbnail(url: imageUrl),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+}
 
-  String _formatCount(dynamic count) {
-    if (count == null) return '0';
-    final num = count is int ? count : int.tryParse(count.toString()) ?? 0;
-    if (num >= 10000) {
-      return '${(num / 10000).toStringAsFixed(1)}万';
-    }
-    if (num >= 1000) {
-      return '${(num / 1000).toStringAsFixed(1)}k';
-    }
-    return num.toString();
+class _HotLabelChip extends StatelessWidget {
+  final String text;
+  final ColorScheme colorScheme;
+
+  const _HotLabelChip({required this.text, required this.colorScheme});
+
+  @override
+  Widget build(BuildContext context) {
+    final isNew = text.contains('新');
+    final color = isNew ? colorScheme.primary : colorScheme.error;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 0.6),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// 热榜缩略图：8px 圆角，占位与错误态在同一裁切范围。
+class _HotThumbnail extends StatelessWidget {
+  final String url;
+
+  const _HotThumbnail({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: 84,
+        height: 84,
+        child: CachedNetworkImage(
+          imageUrl: url,
+          fit: BoxFit.cover,
+          httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
+          fadeInDuration: const Duration(milliseconds: 200),
+          fadeOutDuration: const Duration(milliseconds: 100),
+          placeholder: (context, url) => ColoredBox(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          ),
+          errorWidget: (context, url, error) => ColoredBox(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            child: Icon(
+              Icons.image_outlined,
+              size: 22,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

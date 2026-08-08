@@ -5,6 +5,7 @@ import '../../http/init.dart';
 import '../../models/common/paging_info.dart';
 import '../widgets/error_widget.dart' as custom;
 import 'app_chrome.dart';
+import 'feedback_toast.dart';
 import 'unified_comment_item.dart';
 
 /// 子评论面板（BottomSheet 弹出）
@@ -111,7 +112,7 @@ class _ChildCommentPanelState extends State<ChildCommentPanel> {
       _nextUrl = PagingInfo.fromJson(data['paging']).nextUrl;
       _comments.addAll(items);
     } else if (result is Error) {
-      Get.snackbar('加载失败', (result as Error).errMsg);
+      TritiumFeedback.error('加载失败', (result as Error).errMsg);
     }
 
     _isLoadingMore = false;

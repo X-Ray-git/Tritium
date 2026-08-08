@@ -1,6 +1,6 @@
 # 发布与签名
 
-发布流程与 Auto Folo 一致：版本提交、annotated tag、CI 校验、签名构建、GitHub
+发布流程与 Fourier（原 Auto Folo）一致：版本提交、annotated tag、CI 校验、签名构建、GitHub
 Release。当前只构建 Android APK。普通 `master` 推送不会发布版本；tag 推送或手动
 运行工作流才会开始自动打包。
 
