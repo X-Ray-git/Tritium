@@ -22,3 +22,9 @@
 ```bash
 ./scripts/release.sh 0.3.0 -m $'- feat: add session-scoped recommendation de-duplication and verified feedback\n- feat: add draggable body reading progress for articles, answers and pins\n- test: cover recommendation refresh, feedback batching and progress seeking' --push
 ```
+
+## v0.4.0
+
+```bash
+./scripts/release.sh 0.4.0 -m $'- feat: å®\214å\226\204åº\224ç\224¨å\206\205é\223¾æ\216¥ã\200\201æ\255£æ\226\207æ¸²æ\237\223ä¸\216ç»\237ä¸\200å\217\215é¦\210\n- feat: æ\224¯æ\214\201é¦\226é¡µè·\237æ\211\213æ¨ªæ»\221å\222\214å\233\236ç\255\224è¿\236ç»\255å\210\206é¡µ\n- fix: ä¿®æ\255£ç»\237è®¡è¯\255ä¹\211ã\200\201ç\203\255æ¦\234å\255\227æ®µã\200\201å°\201é\235¢æ¯\224ä¾\213ä¸\216é\207\215å¤\215å\210\206é¡µ\n- docs: æ\233´æ\226° Fourier å\217\202è\200\203å\205³ç³»ä¸\216éª\214æ\224¶è®°å½\225' --push
+```
