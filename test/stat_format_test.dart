@@ -90,8 +90,19 @@ void main() {
         }),
       );
 
-      expect(find.text('1234 万热度'), findsOneWidget);
+      expect(find.byIcon(Icons.local_fire_department_outlined), findsOneWidget);
+      expect(find.text('1234 万'), findsOneWidget);
       expect(find.text('42'), findsOneWidget);
+      final fireIcon = tester.widget<Icon>(
+        find.byIcon(Icons.local_fire_department_outlined),
+      );
+      final answerIcon = tester.widget<Icon>(
+        find.byIcon(Icons.question_answer_outlined),
+      );
+      final heatLabel = tester.widget<Text>(find.text('1234 万'));
+      final answerLabel = tester.widget<Text>(find.text('42'));
+      expect(fireIcon.color, answerIcon.color);
+      expect(heatLabel.style?.color, answerLabel.style?.color);
       // 眼睛图标不再绑定到 follower_count 冒充浏览量。
       expect(find.byIcon(Icons.visibility_outlined), findsNothing);
     });
@@ -116,7 +127,7 @@ void main() {
         }),
       );
 
-      expect(find.text('987 万热度'), findsOneWidget);
+      expect(find.text('987 万'), findsOneWidget);
     });
 
     testWidgets('unknown answer count is a dash, not a fake zero', (

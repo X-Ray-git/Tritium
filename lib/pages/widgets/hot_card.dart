@@ -75,6 +75,9 @@ class HotCard extends StatelessWidget {
         : target['detail_text']?.toString() ??
               data['detail_text']?.toString() ??
               '';
+    final heatDisplayText = heatText
+        .replaceFirst(RegExp(r'\s*热度\s*$'), '')
+        .trim();
 
     // 回答数：target 或 feed_specific 中可靠的数值。
     var answerCount = parseCount(target['answer_count']);
@@ -197,20 +200,26 @@ class HotCard extends StatelessWidget {
                     // 热度与回答数
                     Row(
                       children: [
-                        if (heatText.isNotEmpty)
-                          Expanded(
+                        if (heatDisplayText.isNotEmpty) ...[
+                          Icon(
+                            Icons.local_fire_department_outlined,
+                            size: 14,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
                             child: Text(
-                              heatText,
+                              heatDisplayText,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: colorScheme.error,
-                                fontWeight: FontWeight.w500,
+                                color: colorScheme.onSurfaceVariant,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        if (heatText.isNotEmpty) const SizedBox(width: 12),
+                          const SizedBox(width: 12),
+                        ],
                         Icon(
                           Icons.question_answer_outlined,
                           size: 14,
