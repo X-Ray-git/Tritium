@@ -269,6 +269,9 @@ abstract final class ContentLinkService {
         await Get.toNamed(
           Routes.question,
           arguments: {'questionId': target.id},
+          // 问题正文里可能链接到另一个问题。GetX 默认只比较路由名，
+          // 会把 `/question` -> `/question` 静默当作重复导航，即使 ID 不同。
+          preventDuplicates: false,
         );
         return;
       case ContentLinkKind.article:

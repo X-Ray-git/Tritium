@@ -247,57 +247,62 @@ class _ChildPreview extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Material(
-        color: colors.surfaceContainerHighest.withValues(alpha: 0.46),
-        borderRadius: BorderRadius.circular(12),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ...comments.take(3).map((raw) {
-                  if (raw is! Map) return const SizedBox.shrink();
-                  final authorMap = raw['author'];
-                  final member = authorMap is Map ? authorMap['member'] : null;
-                  final author = member is Map ? member : authorMap;
-                  final name = author is Map
-                      ? author['name']?.toString()
-                      : null;
-                  final text = raw['content']?.toString() ?? '';
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: CompactHtmlPreview(
-                      content: text,
-                      prefix: '${name ?? '匿名用户'}：',
-                      prefixStyle: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: colors.primary,
+      child: SizedBox(
+        width: double.infinity,
+        child: Material(
+          color: colors.surfaceContainerHighest.withValues(alpha: 0.46),
+          borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ...comments.take(3).map((raw) {
+                    if (raw is! Map) return const SizedBox.shrink();
+                    final authorMap = raw['author'];
+                    final member = authorMap is Map
+                        ? authorMap['member']
+                        : null;
+                    final author = member is Map ? member : authorMap;
+                    final name = author is Map
+                        ? author['name']?.toString()
+                        : null;
+                    final text = raw['content']?.toString() ?? '';
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: CompactHtmlPreview(
+                        content: text,
+                        prefix: '${name ?? '匿名用户'}：',
+                        prefixStyle: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: colors.primary,
+                        ),
+                        textStyle: TextStyle(
+                          fontSize: 13,
+                          color: colors.onSurfaceVariant,
+                          height: 1.45,
+                        ),
                       ),
-                      textStyle: TextStyle(
-                        fontSize: 13,
-                        color: colors.onSurfaceVariant,
-                        height: 1.45,
+                    );
+                  }),
+                  if (totalCount > comments.take(3).length)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Text(
+                        '查看全部 $totalCount 条回复',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: colors.primary,
+                        ),
                       ),
                     ),
-                  );
-                }),
-                if (totalCount > comments.take(3).length)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 3),
-                    child: Text(
-                      '查看全部 $totalCount 条回复',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: colors.primary,
-                      ),
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

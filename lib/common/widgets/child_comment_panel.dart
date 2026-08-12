@@ -8,6 +8,19 @@ import 'app_chrome.dart';
 import 'feedback_toast.dart';
 import 'unified_comment_item.dart';
 
+/// 楼中楼弹层固定使用当前安全区域宽度，不能由加载态或评论文字长度决定宽度。
+BoxConstraints childCommentPanelConstraints(MediaQueryData mediaQuery) {
+  final width = (mediaQuery.size.width - mediaQuery.padding.horizontal).clamp(
+    0.0,
+    double.infinity,
+  );
+  return BoxConstraints(
+    minWidth: width,
+    maxWidth: width,
+    maxHeight: mediaQuery.size.height * 0.85,
+  );
+}
+
 /// 子评论面板（BottomSheet 弹出）
 ///
 /// 对标 PiliPlus 的 VideoReplyReplyPanel 实现
@@ -27,14 +40,13 @@ class ChildCommentPanel extends StatefulWidget {
     required String parentCommentId,
     Map<String, dynamic>? parentComment,
   }) {
+    final mediaQuery = MediaQuery.of(context);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
+      constraints: childCommentPanelConstraints(mediaQuery),
       builder: (context) => ChildCommentPanel(
         parentCommentId: parentCommentId,
         parentComment: parentComment,
