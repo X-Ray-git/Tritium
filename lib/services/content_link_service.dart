@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -247,12 +250,33 @@ class ContentLinkTarget {
 /// 话题、机构号、专栏等尚无原生页的知乎目的地与真正的外部网站由系统浏览器
 /// 打开；无效链接给出统一反馈，不静默失败。
 abstract final class ContentLinkService {
+  static const _duplicateCallbackWindow = Duration(milliseconds: 500);
+  static final Map<String, Timer> _recentTargets = <String, Timer>{};
+
+  @visibleForTesting
+  static void resetNavigationStateForTesting() {
+    for (final timer in _recentTargets.values) {
+      timer.cancel();
+    }
+    _recentTargets.clear();
+  }
+
   static Future<void> open(String rawUrl) async {
     final target = ContentLinkTarget.parse(rawUrl);
     if (target == null) {
       TritiumFeedback.warning('无法打开', '链接格式无效');
       return;
     }
+
+    // SelectionArea and flutter_html can both report the same physical tap on
+    // Android. Coalesce only that short duplicate-callback window; keeping the
+    // target locked for the lifetime of the opened page would block a later,
+    // intentional visit to the same content.
+    final targetKey = '${target.kind.name}:${target.id ?? target.uri}';
+    if (_recentTargets.containsKey(targetKey)) return;
+    _recentTargets[targetKey] = Timer(_duplicateCallbackWindow, () {
+      _recentTargets.remove(targetKey);
+    });
 
     switch (target.kind) {
       case ContentLinkKind.answer:
@@ -263,25 +287,36 @@ abstract final class ContentLinkService {
             'answerId': target.id,
             if (target.questionId != null) 'questionId': target.questionId,
           },
+          preventDuplicates: false,
         );
         return;
       case ContentLinkKind.question:
         await Get.toNamed(
           Routes.question,
           arguments: {'questionId': target.id},
-          // 问题正文里可能链接到另一个问题。GetX 默认只比较路由名，
-          // 会把 `/question` -> `/question` 静默当作重复导航，即使 ID 不同。
           preventDuplicates: false,
         );
         return;
       case ContentLinkKind.article:
-        await Get.toNamed(Routes.article, arguments: {'articleId': target.id});
+        await Get.toNamed(
+          Routes.article,
+          arguments: {'articleId': target.id},
+          preventDuplicates: false,
+        );
         return;
       case ContentLinkKind.pin:
-        await Get.toNamed(Routes.pin, arguments: {'pinId': target.id});
+        await Get.toNamed(
+          Routes.pin,
+          arguments: {'pinId': target.id},
+          preventDuplicates: false,
+        );
         return;
       case ContentLinkKind.user:
-        await Get.toNamed(Routes.user, arguments: {'userId': target.id});
+        await Get.toNamed(
+          Routes.user,
+          arguments: {'userId': target.id},
+          preventDuplicates: false,
+        );
         return;
       case ContentLinkKind.video:
       case ContentLinkKind.external:

@@ -16,6 +16,10 @@ flutter build apk --debug
 flutter build apk --release
 ```
 
+Android Debug 构建使用 `io.github.xraygit.tritium.debug` 和 “Tritium Debug” 名称，
+可与正式版并行安装。涉及正式版本地历史、签名覆盖或线上数据对比的真机诊断，应优先
+使用并行 Debug 包，避免为了 `flutter run` 卸载正式版并丢失本地状态。
+
 ## 当前自动测试覆盖
 
 - `PagingInfo` 对下一页、末页和缺失分页字段的处理。
