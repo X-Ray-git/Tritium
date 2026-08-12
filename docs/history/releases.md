@@ -34,3 +34,9 @@
 ```bash
 ./scripts/release.sh 0.4.1 -m $'- fix: keep reply previews and thread panels at a stable safe-area width\n- fix: restore question links inside selectable article content, including articles opened from history\n- test: cover same-route navigation, tap, drag, and long-press link regressions' --push
 ```
+
+## v0.4.2
+
+```bash
+./scripts/release.sh 0.4.2 -m $'- fix: allow answer, question, article, pin, and user links to open same-type targets with different IDs\n- fix: coalesce duplicate SelectionArea and flutter_html callbacks without blocking later revisits\n- test: cover real selectable-link navigation, same-type route matrix, and duplicate callback window\n- chore: allow the Android debug app to coexist with the signed release app' --push
+```
