@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
@@ -146,7 +149,7 @@ class CustomHtml extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = colorScheme ?? theme.colorScheme;
 
-    return Padding(
+    final renderedContent = Padding(
       padding: padding ?? EdgeInsets.zero,
       child: Html(
         data: _processContent(content),
@@ -278,6 +281,7 @@ class CustomHtml extends StatelessWidget {
         },
       ),
     );
+    return _SelectionCompatibleLinkTapRegion(child: renderedContent);
   }
 
   static double? _parseDimension(String? value) {
@@ -294,6 +298,102 @@ class CustomHtml extends StatelessWidget {
     return match == null ? null : double.tryParse(match.group(1)!);
   }
 }
+
+/// [SelectionArea] 让 RenderParagraph 进入选择命中模式后，不再把 pointer 加入
+/// TextSpan 自带的 TapGestureRecognizer。这个区域从同一次 pointer hit-test 中找到
+/// 实际命中的 RenderParagraph 与 InlineSpan，只在短距离单击时补发链接动作。
+class _SelectionCompatibleLinkTapRegion extends StatefulWidget {
+  final Widget child;
+
+  const _SelectionCompatibleLinkTapRegion({required this.child});
+
+  @override
+  State<_SelectionCompatibleLinkTapRegion> createState() =>
+      _SelectionCompatibleLinkTapRegionState();
+}
+
+class _SelectionCompatibleLinkTapRegionState
+    extends State<_SelectionCompatibleLinkTapRegion> {
+  int? _pointer;
+  Offset? _origin;
+  Timer? _tapTimer;
+  bool _tapExpired = false;
+  bool _moved = false;
+
+  void _reset() {
+    _pointer = null;
+    _origin = null;
+    _tapTimer?.cancel();
+    _tapTimer = null;
+    _tapExpired = false;
+    _moved = false;
+  }
+
+  @override
+  void dispose() {
+    _tapTimer?.cancel();
+    super.dispose();
+  }
+
+  void _invokeLinkAt(Offset globalPosition) {
+    // Outside SelectionArea, flutter_html's normal TapGestureRecognizer owns
+    // the click and provides native semantics; no fallback is needed.
+    if (SelectionContainer.maybeOf(context) == null) return;
+
+    final result = HitTestResult();
+    RendererBinding.instance.hitTestInView(
+      result,
+      globalPosition,
+      View.of(context).viewId,
+    );
+    for (final entry in result.path) {
+      final target = entry.target;
+      if (target is! RenderParagraph) continue;
+      final localPosition = target.globalToLocal(globalPosition);
+      final textPosition = target.getPositionForOffset(localPosition);
+      final span = target.text.getSpanForPosition(textPosition);
+      final recognizer = span is TextSpan ? span.recognizer : null;
+      final onTap = recognizer is TapGestureRecognizer
+          ? recognizer.onTap
+          : null;
+      if (onTap != null) {
+        onTap();
+        return;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        if (_pointer != null) return;
+        _pointer = event.pointer;
+        _origin = event.position;
+        _tapExpired = false;
+        _tapTimer?.cancel();
+        _tapTimer = Timer(_maximumLinkTapDuration, () {
+          _tapExpired = true;
+        });
+      },
+      onPointerMove: (event) {
+        if (event.pointer != _pointer || _origin == null) return;
+        if ((event.position - _origin!).distance > kTouchSlop) _moved = true;
+      },
+      onPointerUp: (event) {
+        if (event.pointer != _pointer) return;
+        final isTap = !_moved && !_tapExpired;
+        _reset();
+        if (isTap) _invokeLinkAt(event.position);
+      },
+      onPointerCancel: (_) => _reset(),
+      child: widget.child,
+    );
+  }
+}
+
+const _maximumLinkTapDuration = Duration(milliseconds: 400);
 
 /// 正文图片：保留显式宽高或样式尺寸，稳定占位与 8px 圆角统一裁切。
 class _ArticleImageExtension extends TagExtension {

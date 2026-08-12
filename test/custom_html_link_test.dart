@@ -73,6 +73,94 @@ void main() {
     expect(tapped, ['/question/3']);
   });
 
+  testWidgets('question links remain tappable inside a selection area', (
+    tester,
+  ) async {
+    final tapped = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SelectionArea(
+            child: SingleChildScrollView(
+              child: CustomHtml(
+                content:
+                    '<p><a href="https://www.zhihu.com/question/631983014">'
+                    '选择区域内的问题链接</a></p>',
+                onLinkTap: (url, attributes, element) {
+                  if (url != null) tapped.add(url);
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final link = find.text('选择区域内的问题链接', findRichText: true);
+    final rect = tester.getRect(link);
+    await tester.tapAt(rect.center);
+
+    expect(tapped, ['https://www.zhihu.com/question/631983014']);
+  });
+
+  testWidgets('dragging from a selected link does not open it', (tester) async {
+    final tapped = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SelectionArea(
+            child: SingleChildScrollView(
+              child: CustomHtml(
+                content:
+                    '<p><a href="https://www.zhihu.com/question/1">'
+                    '从链接文字开始滚动</a></p>',
+                onLinkTap: (url, attributes, element) {
+                  if (url != null) tapped.add(url);
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final rect = tester.getRect(find.text('从链接文字开始滚动', findRichText: true));
+    final gesture = await tester.startGesture(rect.center);
+    await gesture.moveBy(const Offset(0, -40));
+    await gesture.up();
+    await tester.pump();
+
+    expect(tapped, isEmpty);
+  });
+
+  testWidgets('long-pressing a selected link does not open it', (tester) async {
+    final tapped = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SelectionArea(
+            child: CustomHtml(
+              content:
+                  '<p><a href="https://www.zhihu.com/question/2">'
+                  '长按选择链接文字</a></p>',
+              onLinkTap: (url, attributes, element) {
+                if (url != null) tapped.add(url);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.longPress(find.text('长按选择链接文字', findRichText: true));
+    await tester.pump();
+
+    expect(tapped, isEmpty);
+  });
+
   testWidgets('text without href is not tappable', (tester) async {
     final tapped = <String>[];
     await tester.pumpWidget(

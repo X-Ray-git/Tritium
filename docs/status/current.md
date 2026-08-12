@@ -49,6 +49,10 @@
   people/org/appview/oia/zvideo 及 `zhihu://` 单复数）与统一导航策略；HTML 普通
   链接保留 flutter_html 嵌套结构、样式与选择能力，评论“查看图片/动图”仍用专用
   缩略图扩展，`#anchor` 页内定位，无 href 的文字不伪装成链接。
+- 正文链接与系统文本选择共存：文章、回答、问题描述、想法和评论外层的
+  `SelectionArea` 不再吞掉 `flutter_html` 的触屏单击；选择模式会按真实
+  `RenderParagraph/InlineSpan` 命中补发链接动作，同时以位移和按压时长区分滚动、
+  长按选择与单击。
 - 正文渲染对齐 Fourier：行内代码用 alphabetic baseline 的半透明圆角胶囊，
   整行代码块为单容器（8px 圆角、细边框、横向滚动、复制按钮带 1.2 秒勾选态），
   引用块、表格横向滚动、列表、分割线与正文图片样式统一；回答、文章、问题描述、
