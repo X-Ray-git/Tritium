@@ -5,6 +5,16 @@
 静态分析、自动测试、Android Debug/Release 构建和发布脚本均可在真机验收前完成。
 后续代码问题应在发现时直接加入本页，不要只留在聊天记录中。
 
+## 非阻塞构建链升级
+
+- Flutter 3.47 已提示 Gradle 8.14 即将停止支持，后续应升级至至少 9.1。
+- Android Gradle Plugin 8.11.1 后续应升级至至少 9.0.1。
+- Kotlin 2.2.20 后续应升级至至少 2.3.20。
+
+三项应作为同一个 Android 构建链任务评估插件兼容性、签名构建和 Release CI；当前
+Flutter 3.47 下 Debug/Release 均能成功，不作为本轮发布阻塞项，也不使用
+`--android-skip-build-dependency-validation` 隐藏预警。
+
 ## 本轮新增的待真机项目
 
 - 首页三页 PageView 的横滑手感、与设置页 Switch 的手势共存、离屏页面保活

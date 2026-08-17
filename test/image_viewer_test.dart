@@ -132,9 +132,10 @@ void main() {
     );
 
     expect(find.text('1 / 2'), findsOneWidget);
-    await tester.drag(
+    await tester.fling(
       find.byType(InteractiveViewerBoundary),
       const Offset(-500, 0),
+      1200,
     );
     await tester.pump(const Duration(milliseconds: 500));
 

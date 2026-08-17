@@ -4,6 +4,10 @@
 Release。当前只构建 Android APK。普通 `master` 推送不会发布版本；tag 推送或手动
 运行工作流才会开始自动打包。
 
+发布构建固定使用 Flutter 3.47.0、Dart 3.13.x 和 Temurin JDK 21。本地验收应使用
+同一 Flutter 版本；CI 使用 `flutter pub get --enforce-lockfile`，不得只更新
+`pubspec.lock` 而保留工作流中的旧 Flutter 版本。
+
 ## 本地检查
 
 ```bash

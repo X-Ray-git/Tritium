@@ -1,5 +1,31 @@
 # 验证记录
 
+## 2026-08-17：Flutter 3.47 工具链适配
+
+- 本机与发布工作流基线从 Flutter 3.44.6 对齐到 Flutter 3.47.0、Dart 3.13.x；CI
+  Java 从 Temurin 17 对齐到 JDK 21，与本机标准 `flutter build` 使用的 Android
+  Studio JDK 主版本一致。
+- Flutter 3.47 严格解析旧锁文件会失败；已由新版 SDK 更新 `intl`、`matcher`、
+  `meta`、`test_api` 和 `vector_math` 五个关联依赖，未连带升级其他业务依赖。
+- 更新后的锁文件已通过 `flutter pub get --enforce-lockfile`，发布 CI 同步启用严格
+  锁文件校验，SDK 与锁文件不一致时会在构建前明确失败。
+- 新版 `flutter pub get` 生成的平台目录分析排除项已纳入 `analysis_options.yaml`，
+  避免分析构建产物和平台生成目录。
+- 原测试有 4 项稳定失败：回答横滑、标题滚动几何、图片横滑和下拉刷新反悔。
+  最小 `PageView`/`ListView` 探针正常；页面切换改用带速度的 `fling`、精确滚动改用
+  分帧 `timedDrag`、原始指针改用递增时间戳后全部通过。生产手势代码无需为测试
+  合成事件调整。
+- `dart format`：3 个测试文件无格式变化。
+- `dart analyze`：通过，无诊断。
+- `flutter test`：135 项全部通过。
+- `flutter build apk --debug`：通过。
+- `flutter build apk --release`：通过，产物 67.3MB；本地未配置正式密钥时继续使用
+  既有 Debug 签名回退。
+- `git diff --check`：通过。
+
+Flutter 3.47 对 Gradle 8.14、AGP 8.11.1 和 Kotlin 2.2.20 给出未来停止支持预警，
+但本轮双构建均通过；这三项保留为单独的 Android 构建链升级，不阻塞当前适配。
+
 ## 2026-08-12：同类型内容链接真机闭环
 
 - 真机日志证明触摸命中、HTML 回调和 URL 类型解析均正常；专栏能打开而问题/回答

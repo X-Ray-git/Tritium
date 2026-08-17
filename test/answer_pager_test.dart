@@ -127,7 +127,7 @@ void main() {
       expect(find.text('第一页正文'), findsOneWidget);
       expect(find.text('11'), findsOneWidget);
 
-      await tester.drag(find.byType(PageView), const Offset(-700, 0));
+      await tester.fling(find.byType(PageView), const Offset(-700, 0), 1200);
       await tester.pumpAndSettle();
 
       expect(find.text('第二页正文'), findsOneWidget);
@@ -174,9 +174,10 @@ void main() {
       expect(collapsedTitle().opacity, 0);
       final fixedAppBarRect = tester.getRect(find.byType(AppBar));
 
-      await tester.drag(
+      await tester.timedDrag(
         find.byKey(const Key('answer-scroll-a')),
         const Offset(0, -500),
+        const Duration(milliseconds: 300),
       );
       await tester.pumpAndSettle();
       expect(sourceTitle(), findsNothing);
@@ -184,9 +185,10 @@ void main() {
       expect(tester.getRect(find.byType(AppBar)), fixedAppBarRect);
 
       // 深度阅读后只反向少量时，正文尚未回到顶部，原始标题不得提前展开。
-      await tester.drag(
+      await tester.timedDrag(
         find.byKey(const Key('answer-scroll-a')),
         const Offset(0, 40),
+        const Duration(milliseconds: 200),
       );
       await tester.pumpAndSettle();
       if (sourceTitle().evaluate().isNotEmpty) {
@@ -198,9 +200,10 @@ void main() {
       expect(collapsedTitle().opacity, 1);
       expect(tester.getRect(find.byType(AppBar)), fixedAppBarRect);
 
-      await tester.drag(
+      await tester.timedDrag(
         find.byKey(const Key('answer-scroll-a')),
         const Offset(0, 600),
+        const Duration(milliseconds: 300),
       );
       await tester.pumpAndSettle();
       expect(sourceTitle(), findsOneWidget);

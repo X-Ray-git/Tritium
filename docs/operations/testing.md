@@ -1,5 +1,19 @@
 # 测试约定
 
+## 工具链基线
+
+- Flutter `3.47.0`、Dart `3.13.x`。
+- Android 构建使用 JDK 21；GitHub Actions 使用 Temurin 21，本机标准
+  `flutter build` 使用 Android Studio 内置 JDK 21。
+- `pubspec.lock` 必须由 Flutter 3.47 生成。升级 Flutter 时应在同一提交中同步 CI
+  固定版本和锁文件，升级前不得用新 SDK 单独提交锁文件。
+- 日常 Android 构建统一从 `flutter build` 进入。直接运行 `./gradlew` 可能改用系统
+  `JAVA_HOME`；该路径不是当前验证基线。
+
+Flutter 3.47 已对 Gradle 8.14、Android Gradle Plugin 8.11.1 和 Kotlin 2.2.20
+给出“即将停止支持”预警，但三者当前仍可完成 Debug/Release 构建。构建链的大版本
+升级单独规划和验证，不与 Flutter SDK 适配混在同一次变更中。
+
 ## 日常改动
 
 先格式化本次修改的 Dart 文件，然后执行：
@@ -38,6 +52,13 @@ Android Debug 构建使用 `io.github.xraygit.tritium.debug` 和 “Tritium Debu
 - 评论自动加载：长内容真实父滚动触发、短内容首帧补页、视口几何、重复游标停止、
   加载更多错误在排序成功后清理，以及排序玻璃弹层的 Material/Ink 层级。
 - 应用版本迁移与本地存储兼容规则。
+
+## 手势测试约定
+
+页面切换等带有停稳语义的操作使用带速度的 `fling`；需要精确验证滚动距离和标题
+阈值时使用分帧的 `timedDrag`。直接通过 `TestGesture` 验证同一手势内的状态变化时，
+必须逐帧递增时间戳并先越过手势阈值，不能把整段位移作为时间戳为零的单个事件。
+这既更接近真机输入，也避免 Flutter 手势仲裁升级后产生没有业务意义的假失败。
 
 ## 真机边界
 

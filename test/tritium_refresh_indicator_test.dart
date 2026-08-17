@@ -42,7 +42,16 @@ void main() {
     final gesture = await tester.startGesture(
       tester.getCenter(find.text('item 2')),
     );
-    await gesture.moveBy(const Offset(0, 120));
+    // 先越过手势阈值，再继续同一次下拉，模拟真机的分帧指针事件。
+    await gesture.moveBy(
+      const Offset(0, 30),
+      timeStamp: const Duration(milliseconds: 16),
+    );
+    await tester.pump(const Duration(milliseconds: 16));
+    await gesture.moveBy(
+      const Offset(0, 90),
+      timeStamp: const Duration(milliseconds: 32),
+    );
     await tester.pump();
     var refreshState = tester.state<custom_refresh.RefreshIndicatorState>(
       find.byType(custom_refresh.RefreshIndicator),
