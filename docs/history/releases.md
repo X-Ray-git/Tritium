@@ -40,3 +40,9 @@
 ```bash
 ./scripts/release.sh 0.4.2 -m $'- fix: allow answer, question, article, pin, and user links to open same-type targets with different IDs\n- fix: coalesce duplicate SelectionArea and flutter_html callbacks without blocking later revisits\n- test: cover real selectable-link navigation, same-type route matrix, and duplicate callback window\n- chore: allow the Android debug app to coexist with the signed release app' --push
 ```
+
+## v0.4.3
+
+```bash
+./scripts/release.sh 0.4.3 -m $'- fix: stabilize Android text selection across paragraphs, lists, quotes, and inline code\n- fix: add bounded image retries and avoid main PageView rebuilds\n- ci: apply the versioned Flutter selection patch before release builds'
+```
