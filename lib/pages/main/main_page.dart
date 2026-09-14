@@ -104,20 +104,19 @@ class _MainPageState extends State<MainPage> {
         ),
         body: NotificationListener<ScrollEndNotification>(
           onNotification: _handleScrollEnd,
-          child: Obx(
-            () => PageView(
-              controller: _pageController,
-              onPageChanged: _onPageChanged,
-              children: [
-                for (var i = 0; i < _pages.length; i++)
-                  // 离屏页面暂停动画（保留状态），避免加载指示器等持续动画
-                  // 在不可见时空转。
-                  TickerMode(
-                    enabled: controller.currentIndex.value == i,
-                    child: _pages[i],
-                  ),
-              ],
-            ),
+          child: PageView(
+            controller: _pageController,
+            onPageChanged: _onPageChanged,
+            children: [
+              for (var i = 0; i < _pages.length; i++)
+                // 只更新对应页面的 TickerMode，不因导航索引变化重建
+                // PageView 本身，避免切换阈值处出现一次额外布局。
+                _ReactiveTickerMode(
+                  controller: controller,
+                  index: i,
+                  child: _pages[i],
+                ),
+            ],
           ),
         ),
         bottomNavigationBar: Obx(
@@ -126,6 +125,28 @@ class _MainPageState extends State<MainPage> {
             onSelected: _onNavigationSelected,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ReactiveTickerMode extends StatelessWidget {
+  const _ReactiveTickerMode({
+    required this.controller,
+    required this.index,
+    required this.child,
+  });
+
+  final MainController controller;
+  final int index;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(
+      () => TickerMode(
+        enabled: controller.currentIndex.value == index,
+        child: child,
       ),
     );
   }

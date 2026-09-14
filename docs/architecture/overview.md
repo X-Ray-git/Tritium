@@ -42,13 +42,20 @@ Tritium 采用按页面模块组织的轻量 Flutter 架构。当前体量下不
 渲染器而引入 Tritium 不需要的视频、桌面交互和代理逻辑。图片必须保留显式宽高或
 样式中的尺寸信息，使用稳定占位、8 像素圆角和按设备像素密度设置的缓存尺寸。
 
-正文语义组件建立在 flutter_html 扩展之上，与稳定布局正交：行内代码是
-alphabetic baseline 对齐的半透明圆角胶囊；`<pre>` 渲染为单容器代码块（8px 圆角、
-细边框、横向滚动、复制按钮带 1.2 秒勾选态），`<pre><code>` 不会出现两层背景；
+正文语义组件建立在 flutter_html 扩展之上，与稳定布局正交：`CustomHtml` 先按
+普通文本、列表和引用的结构边界拆分，普通片段通过稳定 `GlobalKey` 保持 Html parser，
+列表用固定标记列与悬挂缩进逐项渲染，引用块在独立可选择容器中渲染；嵌套结构递归
+复用同一片段规则。纯格式空块必须在后台分块后过滤，避免产生不可选择的占位段。
+行内代码使用真实 `TextSpan` 的 alphabetic baseline、等宽字体与半透明底色，不得
+改回 WidgetSpan 胶囊，否则 Android 复制内容会变成 U+FFFC 占位符；`<pre>` 渲染为
+单容器代码块（8px 圆角、细边框、横向滚动、复制按钮带 1.2 秒勾选态），
+`<pre><code>` 不会出现两层背景；
 引用块、宽表横向滚动、列表、分割线统一视觉。文本选择在页面级接入
 `SelectionArea`：回答页包在整个 PageView 外层（SelectionArea 是横滑祖先时不会
 抢走横滑手势），文章/想法/问题描述/评论包在各自滚动视图外层；这些包装不改变
-正文终点的几何，阅读进度、标题时机与评论预加载不受影响。
+正文终点的几何，阅读进度、标题时机与评论预加载不受影响。普通链接只使用
+flutter_html 原生 `onLinkTap`；不得再叠加 RenderParagraph hit-test 兜底，否则同一次
+点击会重复导航。
 
 回答横滑期间不得触发父页面整体重建、正文 DOM 解析或评论列表初始化。切页后的
 标题、计数、预加载与纵向位置复位统一在横向滚动结束后执行。
@@ -83,8 +90,8 @@ alphabetic baseline 对齐的半透明圆角胶囊；`<pre>` 渲染为单容器�
    页的话题、机构、专栏等知乎目的地转换为 HTTPS 后交给系统浏览器。无效链接给
    出统一反馈，不静默失败。所有原生内容跳转显式允许同一路由名携带不同内容 ID
    入栈；不能依赖 GetX 默认按路由名去重，否则回答→回答、问题→问题等会被静默
-   拒绝。SelectionArea 兜底与 flutter_html 原生点击可能在 Android 同时回调，
-   服务只按具体目标合并 500ms 内的重复分发，不能把目标锁定到页面退出。
+   拒绝。服务仍按具体目标合并 500ms 内的重复分发，防御未来上游或调用方重复回调，
+   但 HTML 渲染层自身必须保证单次点击只产生一次原生回调，不能把目标锁定到页面退出。
 
 HTML 渲染不再用覆盖全部 `<a>` 的扩展压平链接：普通链接保留 flutter_html 的
 嵌套结构、样式与 `onLinkTap` 回调（同时保留文字选择），只有评论“查看图片/动图”
@@ -121,6 +128,16 @@ SmartDialog 控制。
 - 不在参考工程内直接修改代码。较大移植需要记录来源仓库的 commit 和具体文件，
   在 Tritium 内按当前产品边界重新审查，并建立独立回归测试。
 - 更新 Hydrogen 时只在其嵌套仓库内执行 Git 操作，不从 Tritium 根目录递归处理。
+
+## Flutter 补丁与 CI
+
+发布工作流固定 Flutter 3.47.0，并在 `flutter pub get` 前执行
+`scripts/apply_flutter_patches.sh`。脚本只接受记录在其中的精确 Flutter revision，
+应用 `tool/flutter_patches/3.47.0-selection.patch`，且对已应用或 SDK 已含等价实现的
+情况幂等。该补丁修复 Android SelectionArea 对 WidgetSpan/RenderParagraph 的选择
+支持，是 Tritium 文本选择能力的一部分，不是可跳过的开发机配置。升级 Flutter 时
+必须先验证上游是否已合入等价行为，再更新或删除补丁、revision、CI 版本和回归测试；
+不得在 revision 不符时强行 `git apply`。
 
 ## 安全约定
 

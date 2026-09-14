@@ -1,18 +1,20 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html_parser;
 
 import '../../../services/content_link_service.dart';
 import '../../widgets/feedback_toast.dart';
 import '../image_viewer.dart';
+import 'selectable_html_list.dart';
+import 'stable_selectable_html.dart';
 
 /// 统一的 HTML 渲染组件
 ///
@@ -26,6 +28,7 @@ class CustomHtml extends StatelessWidget {
   final double fontSize;
   final EdgeInsetsGeometry? padding;
   final List<String> imageUrls;
+  final bool _isFragment;
 
   /// 链接点击处理器；默认交给 [ContentLinkService.open]。
   final void Function(
@@ -43,7 +46,17 @@ class CustomHtml extends StatelessWidget {
     this.padding,
     this.imageUrls = const [],
     this.onLinkTap,
-  });
+  }) : _isFragment = false;
+
+  const CustomHtml._fragment({
+    super.key,
+    required this.content,
+    required this.colorScheme,
+    required this.fontSize,
+    required this.imageUrls,
+    required this.onLinkTap,
+  }) : padding = null,
+       _isFragment = true;
 
   static const _emojiMap = {
     '握手': 'https://pic2.zhimg.com/v2-f5aa165e86b5c9ed3b7bee821da59365.png',
@@ -148,140 +161,317 @@ class CustomHtml extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = colorScheme ?? theme.colorScheme;
+    final processed = _processContent(content);
 
-    final renderedContent = Padding(
-      padding: padding ?? EdgeInsets.zero,
-      child: Html(
-        data: _processContent(content),
-        onLinkTap: _handleLinkTap,
-        extensions: [
-          // 处理 LaTeX 公式
-          TagExtension(
-            tagsToExtend: {"tex-math"},
-            builder: (ctx) {
-              String tex =
-                  ctx.attributes['data-tex'] ?? ctx.element?.text ?? '';
+    if (!_isFragment) {
+      final parts = _splitStructuralParts(processed);
+      return Padding(
+        padding: padding ?? EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var index = 0; index < parts.length; index++)
+              CustomHtml._fragment(
+                key: ValueKey((index, parts[index])),
+                content: parts[index],
+                colorScheme: cs,
+                fontSize: fontSize,
+                imageUrls: imageUrls,
+                onLinkTap: onLinkTap,
+              ),
+          ],
+        ),
+      );
+    }
 
-              tex = tex
-                  .replaceAll('&amp;', '&')
-                  .replaceAll('&lt;', '<')
-                  .replaceAll('&gt;', '>')
-                  .replaceAll(r'\\', r'\')
-                  .replaceAll(RegExp(r'\\tag\{.*?\}'), '')
-                  .replaceAll(RegExp(r'\\label\{.*?\}'), '')
-                  .replaceAll(RegExp(r'\\mbox\{.*?\}'), '')
-                  .replaceAll(r'\rm ', '')
-                  .trim();
+    final structural = _singleRootElement(processed);
+    final structuralTag = structural?.localName?.toLowerCase();
+    if (structuralTag == 'blockquote') {
+      return _buildSelectableBlockquote(context, cs, structural!);
+    }
+    if (structuralTag == 'ul' || structuralTag == 'ol') {
+      return SelectableHtmlList(
+        html: processed,
+        markerStyle: TextStyle(
+          fontSize: fontSize,
+          height: 1.7,
+          color: cs.onSurface,
+        ),
+        buildFragment: (html) => CustomHtml._fragment(
+          content: html,
+          colorScheme: cs,
+          fontSize: fontSize,
+          imageUrls: imageUrls,
+          onLinkTap: onLinkTap,
+        ),
+      );
+    }
 
-              final currentFontSize = ctx.style?.fontSize?.value ?? fontSize;
-              final currentColor = ctx.style?.color ?? cs.onSurface;
+    final renderedContent = StableSelectableHtml(
+      data: processed,
+      renderConfigurationKey: (fontSize, theme.brightness, cs),
+      onLinkTap: _handleLinkTap,
+      extensions: [
+        // 处理 LaTeX 公式
+        _MathExtension(fontSize: fontSize, colorScheme: cs),
+        // 正文图片
+        _ArticleImageExtension(imageUrls: imageUrls, fontSize: fontSize),
+        // 评论“查看图片/动图”缩略图链接
+        _CommentImageLinkExtension(colorScheme: cs, imageUrls: imageUrls),
+        // 引用块：圆角容器 + 左侧强调边框，内部保留链接与行内样式
+        _BlockquoteExtension(colorScheme: cs),
+        // 整行代码块
+        _CodeBlockExtension(),
+        // 行内代码
+        InlineCodeExtension(colorScheme: cs),
+        // 表格（宽表可横向滚动）
+        _ArticleTableExtension(),
+      ],
+      style: {
+        'html': Style(display: Display.inline),
+        'body': Style(
+          display: Display.inline,
+          fontSize: FontSize(fontSize),
+          lineHeight: const LineHeight(1.7),
+          margin: Margins.zero,
+          padding: HtmlPaddings.zero,
+          color: cs.onSurface,
+        ),
+        // flutter_html defaults to 40 px on both sides of <figure>.
+        // Auto Folo unwraps figure elements before rendering, so remove that
+        // browser-style gutter while retaining vertical reading rhythm.
+        'figure': Style(
+          margin: Margins.symmetric(vertical: 12),
+          padding: HtmlPaddings.zero,
+        ),
+        'p': Style(
+          display: Display.inline,
+          margin: Margins.zero,
+          after: '\n\n',
+        ),
+        'h1': Style(
+          display: Display.inline,
+          fontSize: FontSize(22),
+          fontWeight: FontWeight.w700,
+          lineHeight: const LineHeight(1.35),
+          margin: Margins.only(top: 24, bottom: 10),
+          before: '\n\n',
+          after: '\n\n',
+        ),
+        'h2': Style(
+          display: Display.inline,
+          fontSize: FontSize(20),
+          fontWeight: FontWeight.w700,
+          lineHeight: const LineHeight(1.4),
+          margin: Margins.only(top: 22, bottom: 8),
+          before: '\n\n',
+          after: '\n\n',
+        ),
+        'h3': Style(
+          display: Display.inline,
+          fontSize: FontSize(18),
+          fontWeight: FontWeight.w600,
+          lineHeight: const LineHeight(1.45),
+          margin: Margins.only(top: 20, bottom: 8),
+          before: '\n\n',
+          after: '\n\n',
+        ),
+        'h4': Style(
+          display: Display.inline,
+          fontSize: FontSize(17),
+          fontWeight: FontWeight.w600,
+          lineHeight: const LineHeight(1.5),
+          margin: Margins.only(top: 18, bottom: 8),
+          before: '\n\n',
+          after: '\n\n',
+        ),
+        'noscript': Style(display: Display.none),
+        'a': Style(color: cs.primary, textDecoration: TextDecoration.none),
+        'strong': Style(fontWeight: FontWeight.w700),
+        'em': Style(fontStyle: FontStyle.italic),
+        'blockquote': Style(
+          fontSize: FontSize(fontSize - 1),
+          color: cs.onSurfaceVariant,
+        ),
+        'code': Style(
+          fontFamily: 'monospace',
+          fontFamilyFallback: const [
+            'Menlo',
+            'Monaco',
+            'Courier New',
+            'Courier',
+          ],
+          fontSize: FontSize(14),
+          color: cs.onSurface,
+        ),
+        'pre': Style(margin: Margins.symmetric(vertical: 12)),
+        'ul': Style(
+          padding: HtmlPaddings.only(left: 20),
+          margin: Margins.only(bottom: 14),
+        ),
+        'ol': Style(
+          padding: HtmlPaddings.only(left: 20),
+          margin: Margins.only(bottom: 14),
+        ),
+        // 针对公式 span 的自定义样式
+        'tex-math': Style(fontSize: FontSize(fontSize)),
+        'hr': Style(
+          margin: Margins.symmetric(vertical: 24),
+          height: Height(1),
+          backgroundColor: cs.outlineVariant,
+          border: Border.all(style: BorderStyle.none),
+        ),
+      },
+    );
+    return renderedContent;
+  }
 
-              return Math.tex(
-                tex,
-                textStyle: TextStyle(
-                  fontSize: currentFontSize,
-                  color: currentColor,
-                ),
-                mathStyle: MathStyle.text,
-                onErrorFallback: (err) {
-                  return Text(tex, style: TextStyle(color: cs.error));
-                },
-              );
-            },
+  Widget _buildSelectableBlockquote(
+    BuildContext context,
+    ColorScheme cs,
+    dom.Element element,
+  ) {
+    final html = _normalizeBlockTextFlow(element.innerHtml);
+    if (!_hasVisibleContent(html)) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        decoration: BoxDecoration(
+          color: cs.primaryContainer.withValues(alpha: 0.25),
+          borderRadius: const BorderRadius.only(
+            topRight: Radius.circular(8),
+            bottomRight: Radius.circular(8),
           ),
-          // 正文图片
-          _ArticleImageExtension(imageUrls: imageUrls, fontSize: fontSize),
-          // 评论“查看图片/动图”缩略图链接
-          _CommentImageLinkExtension(colorScheme: cs, imageUrls: imageUrls),
-          // 引用块：圆角容器 + 左侧强调边框，内部保留链接与行内样式
-          _BlockquoteExtension(colorScheme: cs),
-          // 整行代码块
-          _CodeBlockExtension(),
-          // 行内代码
-          InlineCodeExtension(colorScheme: cs),
-          // 表格（宽表可横向滚动）
-          _ArticleTableExtension(),
-        ],
-        style: {
-          'body': Style(
-            fontSize: FontSize(fontSize),
-            lineHeight: const LineHeight(1.7),
-            margin: Margins.zero,
-            padding: HtmlPaddings.zero,
-            color: cs.onSurface,
-          ),
-          // flutter_html defaults to 40 px on both sides of <figure>.
-          // Auto Folo unwraps figure elements before rendering, so remove that
-          // browser-style gutter while retaining vertical reading rhythm.
-          'figure': Style(
-            margin: Margins.symmetric(vertical: 12),
-            padding: HtmlPaddings.zero,
-          ),
-          'p': Style(margin: Margins.only(bottom: 14)),
-          'h1': Style(
-            fontSize: FontSize(22),
-            fontWeight: FontWeight.w700,
-            lineHeight: const LineHeight(1.35),
-            margin: Margins.only(top: 24, bottom: 10),
-          ),
-          'h2': Style(
-            fontSize: FontSize(20),
-            fontWeight: FontWeight.w700,
-            lineHeight: const LineHeight(1.4),
-            margin: Margins.only(top: 22, bottom: 8),
-          ),
-          'h3': Style(
-            fontSize: FontSize(18),
-            fontWeight: FontWeight.w600,
-            lineHeight: const LineHeight(1.45),
-            margin: Margins.only(top: 20, bottom: 8),
-          ),
-          'h4': Style(
-            fontSize: FontSize(17),
-            fontWeight: FontWeight.w600,
-            lineHeight: const LineHeight(1.5),
-            margin: Margins.only(top: 18, bottom: 8),
-          ),
-          'noscript': Style(display: Display.none),
-          'a': Style(color: cs.primary, textDecoration: TextDecoration.none),
-          'strong': Style(fontWeight: FontWeight.w700),
-          'em': Style(fontStyle: FontStyle.italic),
-          'blockquote': Style(
-            fontSize: FontSize(fontSize - 1),
-            color: cs.onSurfaceVariant,
-          ),
-          'code': Style(
-            fontFamily: 'monospace',
-            fontFamilyFallback: const [
-              'Menlo',
-              'Monaco',
-              'Courier New',
-              'Courier',
-            ],
-            fontSize: FontSize(14),
-            color: cs.onSurface,
-          ),
-          'pre': Style(margin: Margins.symmetric(vertical: 12)),
-          'ul': Style(
-            padding: HtmlPaddings.only(left: 20),
-            margin: Margins.only(bottom: 14),
-          ),
-          'ol': Style(
-            padding: HtmlPaddings.only(left: 20),
-            margin: Margins.only(bottom: 14),
-          ),
-          // 针对公式 span 的自定义样式
-          'tex-math': Style(fontSize: FontSize(fontSize)),
-          'hr': Style(
-            margin: Margins.symmetric(vertical: 24),
-            height: Height(1),
-            backgroundColor: cs.outlineVariant,
-            border: Border.all(style: BorderStyle.none),
-          ),
-        },
+          border: Border(left: BorderSide(color: cs.primary, width: 4)),
+        ),
+        child: StableSelectableHtml(
+          data: html,
+          renderConfigurationKey: (fontSize, cs),
+          onLinkTap: _handleLinkTap,
+          extensions: [
+            _MathExtension(fontSize: fontSize - 1, colorScheme: cs),
+            _ArticleImageExtension(
+              imageUrls: imageUrls,
+              fontSize: fontSize - 1,
+            ),
+            _CommentImageLinkExtension(colorScheme: cs, imageUrls: imageUrls),
+            _CodeBlockExtension(),
+            InlineCodeExtension(colorScheme: cs),
+            _ArticleTableExtension(),
+          ],
+          style: {
+            'html': Style(display: Display.inline),
+            'body': Style(
+              display: Display.inline,
+              fontSize: FontSize(fontSize - 1),
+              lineHeight: const LineHeight(1.6),
+              color: cs.onSurfaceVariant,
+              fontStyle: FontStyle.italic,
+              margin: Margins.zero,
+              padding: HtmlPaddings.zero,
+            ),
+            'a': Style(color: cs.primary),
+            'code': Style(fontFamily: 'monospace', fontSize: FontSize(14)),
+          },
+        ),
       ),
     );
-    return _SelectionCompatibleLinkTapRegion(child: renderedContent);
+  }
+
+  static List<String> _splitStructuralParts(String html) {
+    final fragment = html_parser.parseFragment(html);
+    for (final element in fragment.querySelectorAll('script,style,link,meta')) {
+      element.remove();
+    }
+    final parts = <String>[];
+    var buffer = StringBuffer();
+
+    void flush() {
+      final value = buffer.toString().trim();
+      buffer = StringBuffer();
+      if (_hasVisibleContent(value)) parts.add(value);
+    }
+
+    void collect(Iterable<dom.Node> nodes) {
+      for (final node in nodes) {
+        if (node is dom.Element) {
+          final tag = node.localName?.toLowerCase();
+          if ((tag == 'div' ||
+                  tag == 'section' ||
+                  tag == 'article' ||
+                  tag == 'main') &&
+              node.querySelector('blockquote, ul, ol') != null) {
+            collect(node.nodes);
+            continue;
+          }
+          if (tag == 'blockquote' || tag == 'ul' || tag == 'ol') {
+            flush();
+            if (_hasVisibleContent(node.outerHtml)) parts.add(node.outerHtml);
+            continue;
+          }
+          buffer.write(node.outerHtml);
+        } else if (node is dom.Text) {
+          buffer.write(htmlEscape.convert(node.data));
+        }
+      }
+    }
+
+    collect(fragment.nodes);
+    flush();
+    return parts.isEmpty ? const [] : List.unmodifiable(parts);
+  }
+
+  static dom.Element? _singleRootElement(String html) {
+    final fragment = html_parser.parseFragment(html);
+    final meaningful = fragment.nodes
+        .where((node) {
+          return node is dom.Element ||
+              (node is dom.Text && node.data.trim().isNotEmpty);
+        })
+        .toList(growable: false);
+    return meaningful.length == 1 && meaningful.single is dom.Element
+        ? meaningful.single as dom.Element
+        : null;
+  }
+
+  static String _normalizeBlockTextFlow(String html) {
+    final fragment = html_parser.parseFragment(html);
+    final parts = <String>[];
+    final inline = StringBuffer();
+
+    void flushInline() {
+      final value = inline.toString();
+      inline.clear();
+      if (_hasVisibleContent(value)) parts.add(value);
+    }
+
+    for (final node in fragment.nodes) {
+      if (node is dom.Element) {
+        final tag = node.localName?.toLowerCase();
+        if (tag == 'p' || tag == 'div') {
+          flushInline();
+          if (_hasVisibleContent(node.innerHtml)) parts.add(node.innerHtml);
+        } else {
+          inline.write(node.outerHtml);
+        }
+      } else if (node is dom.Text) {
+        inline.write(htmlEscape.convert(node.data));
+      }
+    }
+    flushInline();
+    return parts.join('<br><br>');
+  }
+
+  static bool _hasVisibleContent(String html) {
+    if (html.trim().isEmpty) return false;
+    final fragment = html_parser.parseFragment(html);
+    final text = (fragment.text ?? '').replaceAll(
+      RegExp(r'[\s\u00a0\u200b-\u200d\u2060\ufeff]'),
+      '',
+    );
+    return text.isNotEmpty ||
+        fragment.querySelector('img, iframe, video, audio, hr') != null;
   }
 
   static double? _parseDimension(String? value) {
@@ -299,101 +489,39 @@ class CustomHtml extends StatelessWidget {
   }
 }
 
-/// [SelectionArea] 让 RenderParagraph 进入选择命中模式后，不再把 pointer 加入
-/// TextSpan 自带的 TapGestureRecognizer。这个区域从同一次 pointer hit-test 中找到
-/// 实际命中的 RenderParagraph 与 InlineSpan，只在短距离单击时补发链接动作。
-class _SelectionCompatibleLinkTapRegion extends StatefulWidget {
-  final Widget child;
-
-  const _SelectionCompatibleLinkTapRegion({required this.child});
-
-  @override
-  State<_SelectionCompatibleLinkTapRegion> createState() =>
-      _SelectionCompatibleLinkTapRegionState();
+/// LaTeX stays isolated behind one extension so every selectable fragment
+/// (normal text, lists and quotes) receives identical formula rendering.
+class _MathExtension extends TagExtension {
+  _MathExtension({required double fontSize, required ColorScheme colorScheme})
+    : super(
+        tagsToExtend: {'tex-math'},
+        builder: (ctx) {
+          var tex = ctx.attributes['data-tex'] ?? ctx.element?.text ?? '';
+          tex = tex
+              .replaceAll('&amp;', '&')
+              .replaceAll('&lt;', '<')
+              .replaceAll('&gt;', '>')
+              .replaceAll(r'\\', r'\')
+              .replaceAll(RegExp(r'\\tag\{.*?\}'), '')
+              .replaceAll(RegExp(r'\\label\{.*?\}'), '')
+              .replaceAll(RegExp(r'\\mbox\{.*?\}'), '')
+              .replaceAll(r'\rm ', '')
+              .trim();
+          final currentFontSize = ctx.style?.fontSize?.value ?? fontSize;
+          final currentColor = ctx.style?.color ?? colorScheme.onSurface;
+          return Math.tex(
+            tex,
+            textStyle: TextStyle(
+              fontSize: currentFontSize,
+              color: currentColor,
+            ),
+            mathStyle: MathStyle.text,
+            onErrorFallback: (error) =>
+                Text(tex, style: TextStyle(color: colorScheme.error)),
+          );
+        },
+      );
 }
-
-class _SelectionCompatibleLinkTapRegionState
-    extends State<_SelectionCompatibleLinkTapRegion> {
-  int? _pointer;
-  Offset? _origin;
-  Timer? _tapTimer;
-  bool _tapExpired = false;
-  bool _moved = false;
-
-  void _reset() {
-    _pointer = null;
-    _origin = null;
-    _tapTimer?.cancel();
-    _tapTimer = null;
-    _tapExpired = false;
-    _moved = false;
-  }
-
-  @override
-  void dispose() {
-    _tapTimer?.cancel();
-    super.dispose();
-  }
-
-  void _invokeLinkAt(Offset globalPosition) {
-    // Outside SelectionArea, flutter_html's normal TapGestureRecognizer owns
-    // the click and provides native semantics; no fallback is needed.
-    if (SelectionContainer.maybeOf(context) == null) return;
-
-    final result = HitTestResult();
-    RendererBinding.instance.hitTestInView(
-      result,
-      globalPosition,
-      View.of(context).viewId,
-    );
-    for (final entry in result.path) {
-      final target = entry.target;
-      if (target is! RenderParagraph) continue;
-      final localPosition = target.globalToLocal(globalPosition);
-      final textPosition = target.getPositionForOffset(localPosition);
-      final span = target.text.getSpanForPosition(textPosition);
-      final recognizer = span is TextSpan ? span.recognizer : null;
-      final onTap = recognizer is TapGestureRecognizer
-          ? recognizer.onTap
-          : null;
-      if (onTap != null) {
-        onTap();
-        return;
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (event) {
-        if (_pointer != null) return;
-        _pointer = event.pointer;
-        _origin = event.position;
-        _tapExpired = false;
-        _tapTimer?.cancel();
-        _tapTimer = Timer(_maximumLinkTapDuration, () {
-          _tapExpired = true;
-        });
-      },
-      onPointerMove: (event) {
-        if (event.pointer != _pointer || _origin == null) return;
-        if ((event.position - _origin!).distance > kTouchSlop) _moved = true;
-      },
-      onPointerUp: (event) {
-        if (event.pointer != _pointer) return;
-        final isTap = !_moved && !_tapExpired;
-        _reset();
-        if (isTap) _invokeLinkAt(event.position);
-      },
-      onPointerCancel: (_) => _reset(),
-      child: widget.child,
-    );
-  }
-}
-
-const _maximumLinkTapDuration = Duration(milliseconds: 400);
 
 /// 正文图片：保留显式宽高或样式尺寸，稳定占位与 8px 圆角统一裁切。
 class _ArticleImageExtension extends TagExtension {
@@ -500,7 +628,63 @@ class _ArticleHtmlImage extends StatefulWidget {
 }
 
 class _ArticleHtmlImageState extends State<_ArticleHtmlImage> {
+  static const _retryDelays = <Duration>[
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+  ];
+
   int _retryCount = 0;
+  int _automaticRetryCount = 0;
+  Timer? _retryTimer;
+
+  @override
+  void didUpdateWidget(covariant _ArticleHtmlImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url == widget.url) return;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _retryCount = 0;
+    _automaticRetryCount = 0;
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleAutomaticRetry() {
+    if (_retryTimer != null || _automaticRetryCount >= _retryDelays.length) {
+      return;
+    }
+    final delay = _retryDelays[_automaticRetryCount];
+    _retryTimer = Timer(delay, () async {
+      _retryTimer = null;
+      await CachedNetworkImage.evictFromCache(widget.url);
+      if (!mounted) return;
+      setState(() {
+        _automaticRetryCount++;
+        _retryCount++;
+      });
+    });
+  }
+
+  void _handleImageLoaded() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+  }
+
+  Future<void> _retryManually() async {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    await CachedNetworkImage.evictFromCache(widget.url);
+    if (!mounted) return;
+    setState(() {
+      _automaticRetryCount = 0;
+      _retryCount++;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -551,47 +735,114 @@ class _ArticleHtmlImageState extends State<_ArticleHtmlImage> {
                   httpHeaders: const {'Referer': 'https://www.zhihu.com/'},
                   fadeInDuration: const Duration(milliseconds: 250),
                   fadeOutDuration: const Duration(milliseconds: 80),
+                  imageBuilder: (context, imageProvider) {
+                    _handleImageLoaded();
+                    return Image(
+                      image: imageProvider,
+                      width: displayWidth,
+                      fit: BoxFit.contain,
+                    );
+                  },
                   placeholder: (context, url) => SizedBox(
                     width: displayWidth,
                     height: placeholderHeight,
-                    child: const Center(
-                      child: SizedBox.square(
-                        dimension: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
+                    child: const Center(child: _BoundedImageLoadingIndicator()),
                   ),
-                  errorWidget: (context, url, error) => SizedBox(
-                    width: displayWidth,
-                    height: placeholderHeight,
-                    child: ColoredBox(
-                      color: colors.surfaceContainerHighest.withValues(
-                        alpha: 0.22,
-                      ),
-                      child: Center(
-                        child: TextButton.icon(
-                          onPressed: () async {
-                            await CachedNetworkImage.evictFromCache(widget.url);
-                            if (mounted) setState(() => _retryCount++);
-                          },
-                          icon: Icon(
-                            Icons.refresh_rounded,
-                            color: colors.onSurfaceVariant,
-                          ),
-                          label: Text(
-                            '重新加载',
-                            style: TextStyle(color: colors.onSurfaceVariant),
-                          ),
+                  errorWidget: (context, url, error) {
+                    _scheduleAutomaticRetry();
+                    final retrying = _automaticRetryCount < _retryDelays.length;
+                    return SizedBox(
+                      width: displayWidth,
+                      height: placeholderHeight,
+                      child: ColoredBox(
+                        color: colors.surfaceContainerHighest.withValues(
+                          alpha: 0.22,
+                        ),
+                        child: Center(
+                          child: retrying
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.image_outlined,
+                                      color: colors.onSurfaceVariant,
+                                      size: 34,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      '重新加载中…',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: colors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : TextButton.icon(
+                                  onPressed: _retryManually,
+                                  icon: Icon(
+                                    Icons.refresh_rounded,
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                  label: Text(
+                                    '重新加载',
+                                    style: TextStyle(
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// Stalled image requests should not keep an indeterminate progress animation
+/// ticking at display refresh rate forever. The request remains active; only
+/// the visual marker settles after a short diagnostic window.
+class _BoundedImageLoadingIndicator extends StatefulWidget {
+  const _BoundedImageLoadingIndicator();
+
+  @override
+  State<_BoundedImageLoadingIndicator> createState() =>
+      _BoundedImageLoadingIndicatorState();
+}
+
+class _BoundedImageLoadingIndicatorState
+    extends State<_BoundedImageLoadingIndicator> {
+  Timer? _settleTimer;
+  bool _animated = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _settleTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _animated = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _settleTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 24,
+      child: CircularProgressIndicator(
+        value: _animated ? null : 0.72,
+        strokeWidth: 2,
+      ),
     );
   }
 }
@@ -1020,24 +1271,12 @@ class InlineCodeExtension extends HtmlExtension {
 
   @override
   InlineSpan build(ExtensionContext context) {
-    final child = CssBoxWidget.withInlineSpanChildren(
-      children: context.inlineSpanChildren!,
-      style: context.style!,
-    );
-
-    return WidgetSpan(
-      alignment: PlaceholderAlignment.baseline,
-      baseline: TextBaseline.alphabetic,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: child,
+    final style = context.style!.generateTextStyle().copyWith(
+      backgroundColor: colorScheme.surfaceContainerHighest.withValues(
+        alpha: 0.6,
       ),
     );
+    return TextSpan(style: style, children: context.inlineSpanChildren!);
   }
 }
 

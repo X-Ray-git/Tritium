@@ -23,22 +23,33 @@ void main() {
             BorderRadius.circular(8),
   );
 
-  testWidgets('inline code renders as an inline capsule, not a block', (
+  testWidgets('inline code stays in the surrounding selectable text flow', (
     tester,
   ) async {
     await pumpHtml(tester, '<p>运行 <code>flutter test</code> 即可</p>');
 
     // 行内代码不产生整行代码块容器。
     expect(codeBlockFinder, findsNothing);
-    // 行内代码是带 6px 圆角的半透明胶囊。
-    final capsules = find.byWidgetPredicate(
-      (widget) =>
-          widget is Container &&
-          widget.decoration is BoxDecoration &&
-          (widget.decoration! as BoxDecoration).borderRadius ==
-              BorderRadius.circular(6),
+    // 行内代码不能再成为 WidgetSpan 容器，否则 Android 选择与复制只会
+    // 得到对象占位符。
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Container &&
+            widget.decoration is BoxDecoration &&
+            (widget.decoration! as BoxDecoration).borderRadius ==
+                BorderRadius.circular(6),
+      ),
+      findsNothing,
     );
-    expect(capsules, findsOneWidget);
+    final paragraph = tester.widget<RichText>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is RichText &&
+            widget.text.toPlainText().contains('flutter test'),
+      ),
+    );
+    expect(paragraph.text.toPlainText(), contains('运行 flutter test 即可'));
   });
 
   testWidgets('<pre><code> produces exactly one code block container', (

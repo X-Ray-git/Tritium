@@ -44,4 +44,32 @@ void main() {
       'https://pic.example.com/b.webp',
     ]);
   });
+
+  test('drops formatting-only chunks that are unsafe for selection', () {
+    final chunks = HtmlChunker.parseSync('''
+      <p><br></p>
+      <p><span></span></p>
+      <p><a href="https://example.com"></a></p>
+      <blockquote><br></blockquote>
+      <ul><li><span></span></li></ul>
+      <table><tbody><tr><td><br></td></tr></tbody></table>
+      <source type="image/webp" srcset="https://example.com/image.webp">
+      <input disabled type="checkbox">
+      <button><svg></svg></button>
+    ''');
+
+    expect(chunks, isEmpty);
+  });
+
+  test('keeps meaningful text and widget-only content', () {
+    final chunks = HtmlChunker.parseSync('''
+      <p>Hello <code>world</code></p>
+      <blockquote><img src="https://example.com/image.webp"></blockquote>
+      <hr>
+    ''');
+
+    expect(chunks.join(), contains('Hello'));
+    expect(chunks.join(), contains('<img'));
+    expect(chunks.join(), contains('<hr'));
+  });
 }

@@ -124,13 +124,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('第一页正文'), findsOneWidget);
+      expect(find.textContaining('第一页正文'), findsAtLeastNWidgets(1));
       expect(find.text('11'), findsOneWidget);
 
       await tester.fling(find.byType(PageView), const Offset(-700, 0), 1200);
       await tester.pumpAndSettle();
 
-      expect(find.text('第二页正文'), findsOneWidget);
+      expect(find.textContaining('第二页正文'), findsAtLeastNWidgets(1));
       expect(find.text('21'), findsOneWidget);
       expect(find.text('22'), findsOneWidget);
       expect(tester.takeException(), isNull);

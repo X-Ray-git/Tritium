@@ -352,3 +352,22 @@ CI 使用 Flutter 3.44.6，发布构建可能反向无法解析依赖。
 Flutter 3.47 对 Gradle 8.14、AGP 8.11.1 和 Kotlin 2.2.20 给出的未来弃用预警另立
 构建链升级任务；当前版本仍可构建，不在本次 SDK 适配中同时跨越三个 Android 大版本，
 以免混淆 Flutter 回归和 Android 构建回归。
+
+## 2026-09-14：吸收 Fourier GUI 修复时以缺陷机制而非外观批量迁移
+
+背景：完整审计 Fourier 历史后，Tritium 已经独立解决进度、AppBar、刷新、图片查看、
+链接和安全区等多数同类问题；直接迁移其新一批半透明界面会改变已否决的视觉方案。
+仍能在 Tritium 稳定复现的机制问题包括：Android SelectionArea 把段落/列表/引用中的
+WidgetSpan 复制成 U+FFFC，父级无关 rebuild 会重建 Html parser；格式空 HTML 形成无效
+块；图片请求失败或挂起时缺少有限重试；主页导航索引变化会重建整个 PageView。发布
+CI 又使用干净 Flutter 3.47.0，而开发机已包含 Fourier 使用的选择补丁，两者行为不一致。
+
+决策：只迁移上述机制修复。HTML 按结构边界拆分，列表和引用使用真实可选择文字流，
+行内代码从 WidgetSpan 改为带背景的 TextSpan，内容与渲染配置未变时保持 parser；链接
+回归 flutter_html 单一原生回调，不再叠加命中兜底。图片采用 1/2/4 秒有限自动重试，
+挂起动画 4 秒后静止。首页只响应式更新页面 TickerMode。CI 在依赖安装前执行仓库内
+版本化补丁，脚本必须校验 Flutter 精确 revision 并保持幂等。
+
+后果：Fourier 后续提交不能按“GUI 修复”标签整批同步，必须先在 Tritium 复现并检查
+是否符合只读产品边界。Flutter 升级是 SDK、补丁、锁文件、CI 与选择回归测试的单一
+变更单元；新版 SDK 若已原生修复，验证后删除补丁，而不是绕过 revision 校验。

@@ -64,7 +64,20 @@ abstract final class HtmlChunker {
     }
     final blocks = <String>[];
     _collect(fragment.nodes, blocks);
-    return _groupSmallBlocks(blocks);
+    return _groupSmallBlocks(
+      blocks.where(_hasRenderableContent).toList(growable: false),
+    );
+  }
+
+  static bool _hasRenderableContent(String html) {
+    if (html.trim().isEmpty) return false;
+    final fragment = html_parser.parseFragment(html);
+    final visibleText = (fragment.text ?? '').replaceAll(
+      RegExp(r'[\s\u00a0\u200b-\u200d\u2060\ufeff]'),
+      '',
+    );
+    if (visibleText.isNotEmpty) return true;
+    return fragment.querySelector('img, iframe, video, audio, hr') != null;
   }
 
   static List<String> extractImageUrls(String source) {
