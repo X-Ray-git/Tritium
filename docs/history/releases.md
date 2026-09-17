@@ -46,3 +46,9 @@
 ```bash
 ./scripts/release.sh 0.4.3 -m $'- fix: stabilize Android text selection across paragraphs, lists, quotes, and inline code\n- fix: add bounded image retries and avoid main PageView rebuilds\n- ci: apply the versioned Flutter selection patch before release builds'
 ```
+
+## v0.4.4
+
+```bash
+./scripts/release.sh 0.4.4 -m $'- fix: prevent emoji HTML attributes from leaking into comments and article text\n- fix: normalize emoji text nodes only once and preserve image and link attributes\n- test: cover existing emoji images, nested content, and code literals' --push
+```
