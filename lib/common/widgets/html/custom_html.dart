@@ -128,17 +128,60 @@ class CustomHtml extends StatelessWidget {
       (match) => '<tex-math${match.group(1)}>${match.group(2)}</tex-math>',
     );
 
-    // 替换表情 [Emoji] -> <img ...>
-    _emojiMap.forEach((key, url) {
-      if (processed.contains('[$key]')) {
-        processed = processed.replaceAll(
-          '[$key]',
-          '<img src="$url" alt="[$key]" class="emoji" style="display:inline; width:20px; height:20px; vertical-align:middle; margin: 0 2px;" data-is-emoji="true" />',
-        );
+    // Only transform text nodes. Replacing raw HTML also replaces an existing
+    // image's alt attribute and leaks malformed markup into visible text.
+    final fragment = html_parser.parseFragment(processed);
+    final pattern = RegExp(r'\[([^\s\[\]]{1,10})\]');
+    void visit(dom.Node parent) {
+      for (final node in parent.nodes.toList()) {
+        if (node is dom.Element) {
+          if (!const {
+            'code',
+            'pre',
+            'tex-math',
+            'script',
+            'style',
+            'textarea',
+          }.contains(node.localName)) {
+            visit(node);
+          }
+          continue;
+        }
+        if (node is! dom.Text) continue;
+        var cursor = 0;
+        for (final match in pattern.allMatches(node.data)) {
+          final url = _emojiMap[match.group(1)];
+          if (url == null) continue;
+          if (match.start > cursor) {
+            parent.insertBefore(
+              dom.Text(node.data.substring(cursor, match.start)),
+              node,
+            );
+          }
+          final image = dom.Element.tag('img')
+            ..attributes.addAll({
+              'src': url,
+              'alt': match.group(0)!,
+              'class': 'emoji',
+              'style':
+                  'display:inline; width:20px; height:20px; vertical-align:middle; margin: 0 2px;',
+              'data-is-emoji': 'true',
+            });
+          parent.insertBefore(image, node);
+          cursor = match.end;
+        }
+        if (cursor > 0) {
+          if (cursor < node.data.length) {
+            parent.insertBefore(dom.Text(node.data.substring(cursor)), node);
+          }
+          node.remove();
+        }
       }
-    });
+    }
 
-    return processed;
+    visit(fragment);
+
+    return fragment.outerHtml;
   }
 
   void _handleLinkTap(
@@ -161,7 +204,8 @@ class CustomHtml extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = colorScheme ?? theme.colorScheme;
-    final processed = _processContent(content);
+    // Internal fragments already passed through normalization at the root.
+    final processed = _isFragment ? content : _processContent(content);
 
     if (!_isFragment) {
       final parts = _splitStructuralParts(processed);
