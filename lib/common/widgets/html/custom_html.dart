@@ -256,6 +256,7 @@ class CustomHtml extends StatelessWidget {
       renderConfigurationKey: (fontSize, theme.brightness, cs),
       onLinkTap: _handleLinkTap,
       extensions: [
+        const _GeneratedTextExtension(),
         // 处理 LaTeX 公式
         _MathExtension(fontSize: fontSize, colorScheme: cs),
         // 正文图片
@@ -394,6 +395,7 @@ class CustomHtml extends StatelessWidget {
           renderConfigurationKey: (fontSize, cs),
           onLinkTap: _handleLinkTap,
           extensions: [
+            const _GeneratedTextExtension(),
             _MathExtension(fontSize: fontSize - 1, colorScheme: cs),
             _ArticleImageExtension(
               imageUrls: imageUrls,
@@ -530,6 +532,33 @@ class CustomHtml extends StatelessWidget {
       caseSensitive: false,
     ).firstMatch(style);
     return match == null ? null : double.tryParse(match.group(1)!);
+  }
+}
+
+/// Preserves generated paragraph and heading separators in selectable text.
+class _GeneratedTextExtension extends HtmlExtension {
+  const _GeneratedTextExtension();
+
+  @override
+  Set<String> get supportedTags => const {};
+
+  // flutter_html 3.0 attaches before/after text to the parent DOM element.
+  // Its built-in dispatcher then treats that text as a p/h element and drops
+  // it. Render the generated text directly, retaining a selectable TextSpan.
+  @override
+  bool matches(ExtensionContext context) =>
+      context.currentStep == CurrentStep.building &&
+      context.styledElement is TextContentElement &&
+      context.node is dom.Element &&
+      context.elementName != 'br';
+
+  @override
+  InlineSpan build(ExtensionContext context) {
+    final element = context.styledElement! as TextContentElement;
+    return TextSpan(
+      text: element.text,
+      style: element.style.generateTextStyle(),
+    );
   }
 }
 
