@@ -8,6 +8,8 @@ import 'package:tritium/http/content_http.dart';
 import 'package:tritium/router/app_pages.dart';
 import 'package:tritium/services/content_link_service.dart';
 
+import 'support/rendered_text.dart';
+
 void main() {
   setUp(() {
     Get.testMode = true;
@@ -116,7 +118,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('另一个回答', findRichText: true));
+    await tester.tapAt(renderedTextRect(tester, '另一个回答').center);
     await tester.pumpAndSettle();
 
     expect(find.text('answer:200'), findsOneWidget);

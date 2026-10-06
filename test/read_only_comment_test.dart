@@ -6,6 +6,8 @@ import 'package:tritium/common/widgets/child_comment_panel.dart';
 import 'package:tritium/common/widgets/html/compact_html_preview.dart';
 import 'package:tritium/common/widgets/unified_comment_item.dart';
 
+import 'support/rendered_text.dart';
+
 void main() {
   testWidgets('vote count is visible but is not an action', (tester) async {
     await tester.pumpWidget(
@@ -28,7 +30,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('只读评论'), findsOneWidget);
+    expect(renderedText('只读评论'), findsOneWidget);
     expect(find.text('12'), findsOneWidget);
     expect(find.text('点赞'), findsNothing);
 

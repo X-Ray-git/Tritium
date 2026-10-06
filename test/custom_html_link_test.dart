@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tritium/common/widgets/html/custom_html.dart';
 
+import 'support/rendered_text.dart';
+
 void main() {
   Widget host(String html, {void Function(String)? onLinkTap}) {
     return MaterialApp(
@@ -29,8 +31,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('这个问题', findRichText: true), findsOneWidget);
-    final rect = tester.getRect(find.text('这个问题', findRichText: true));
+    expect(renderedText('这个问题'), findsOneWidget);
+    final rect = renderedTextRect(tester, '这个问题');
     await tester.tapAt(Offset(rect.left + 30, rect.center.dy));
     expect(tapped, ['https://www.zhihu.com/question/1']);
   });
@@ -47,14 +49,11 @@ void main() {
     await tester.pump();
 
     // 嵌套 span 的文本都保留在同一段落里。
-    final paragraph = find.byWidgetPredicate(
-      (widget) =>
-          widget is RichText && widget.text.toPlainText() == '普通文字加粗与斜体',
-    );
+    final paragraph = renderedText('普通文字加粗与斜体');
     expect(paragraph, findsOneWidget);
 
     // 整个 <a> 是一个可点击段落，点任意位置都命中链接。
-    final rect = tester.getRect(paragraph);
+    final rect = renderedTextRect(tester, '普通文字加粗与斜体');
     await tester.tapAt(Offset(rect.left + 30, rect.center.dy));
     expect(tapped, ['https://www.zhihu.com/question/2']);
   });
@@ -68,7 +67,7 @@ void main() {
     );
     await tester.pump();
 
-    final rect = tester.getRect(find.text('相对路径', findRichText: true));
+    final rect = renderedTextRect(tester, '相对路径');
     await tester.tapAt(Offset(rect.left + 30, rect.center.dy));
     expect(tapped, ['/question/3']);
   });
@@ -97,8 +96,7 @@ void main() {
     );
     await tester.pump();
 
-    final link = find.text('选择区域内的问题链接', findRichText: true);
-    final rect = tester.getRect(link);
+    final rect = renderedTextRect(tester, '选择区域内的问题链接');
     await tester.tapAt(rect.center);
 
     expect(tapped, ['https://www.zhihu.com/question/631983014']);
@@ -126,7 +124,7 @@ void main() {
     );
     await tester.pump();
 
-    final rect = tester.getRect(find.text('从链接文字开始滚动', findRichText: true));
+    final rect = renderedTextRect(tester, '从链接文字开始滚动');
     final gesture = await tester.startGesture(rect.center);
     await gesture.moveBy(const Offset(0, -40));
     await gesture.up();
@@ -155,7 +153,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.longPress(find.text('长按选择链接文字', findRichText: true));
+    await tester.longPressAt(renderedTextRect(tester, '长按选择链接文字').center);
     await tester.pump();
 
     expect(tapped, isEmpty);
@@ -171,8 +169,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('没有 href 的蓝字', findRichText: true), findsOneWidget);
-    final rect = tester.getRect(find.text('没有 href 的蓝字', findRichText: true));
+    expect(renderedText('没有 href 的蓝字'), findsOneWidget);
+    final rect = renderedTextRect(tester, '没有 href 的蓝字');
     await tester.tapAt(Offset(rect.left + 30, rect.center.dy));
     expect(tapped, isEmpty);
   });
@@ -191,7 +189,7 @@ void main() {
     );
     await tester.pump();
 
-    final rect = tester.getRect(find.text('脚注', findRichText: true));
+    final rect = renderedTextRect(tester, '脚注');
     await tester.tapAt(Offset(rect.left + 30, rect.center.dy));
     expect(tapped, isEmpty);
   });
@@ -224,6 +222,6 @@ void main() {
     await tester.pump();
 
     expect(find.byType(CachedNetworkImage), findsNothing);
-    expect(find.text('查看图片的解释文字'), findsOneWidget);
+    expect(renderedText('查看图片的解释文字'), findsOneWidget);
   });
 }

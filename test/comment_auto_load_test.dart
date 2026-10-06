@@ -7,6 +7,8 @@ import 'package:tritium/http/init.dart';
 import 'package:tritium/utils/comment_auto_load.dart';
 import 'package:tritium/utils/storage.dart';
 
+import 'support/rendered_text.dart';
+
 void main() {
   late Directory storageDirectory;
 
@@ -144,7 +146,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(requests, [null, 'page-2']);
-    expect(find.text('comment 2'), findsOneWidget);
+    expect(renderedText('comment 2'), findsOneWidget);
   });
 
   testWidgets('repeated pagination cursor stops automatic requests', (
@@ -185,7 +187,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(requests, [null, 'repeat']);
-    expect(find.text('comment 2'), findsOneWidget);
+    expect(renderedText('comment 2'), findsOneWidget);
     expect(find.text('查看更多评论'), findsNothing);
   });
 
@@ -241,7 +243,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('加载失败，点击重试'), findsNothing);
-    expect(find.text('comment new'), findsOneWidget);
+    expect(renderedText('comment new'), findsOneWidget);
   });
 }
 
