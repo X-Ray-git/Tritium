@@ -52,3 +52,9 @@
 ```bash
 ./scripts/release.sh 0.4.4 -m $'- fix: prevent emoji HTML attributes from leaking into comments and article text\n- fix: normalize emoji text nodes only once and preserve image and link attributes\n- test: cover existing emoji images, nested content, and code literals' --push
 ```
+
+## v0.4.5
+
+```bash
+./scripts/release.sh 0.4.5 -m $'- fix: restore paragraph and heading line breaks in selectable HTML content\n- test: verify rendered block positions and target actual text glyphs for link gestures\n- test: pass all 156 regression tests including emoji, selection, navigation, and comments' --push
+```
