@@ -82,18 +82,19 @@ abstract final class HtmlChunker {
 
   static List<String> extractImageUrls(String source) {
     if (source.trim().isEmpty) return const [];
+    // Video covers are controls, not images in the reader gallery.
+    final galleryFragment = html_parser.parseFragment(source);
+    for (final anchor in galleryFragment.querySelectorAll('a')) {
+      final href = anchor.attributes['href'] ?? '';
+      if (anchor.classes.contains('video-box') ||
+          RegExp(r'(?:/|%2[fF])video(?:/|%2[fF])\d+').hasMatch(href)) {
+        anchor.remove();
+      }
+    }
     final urls = <String>[];
     final seen = <String>{};
-    final imageTags = RegExp(
-      r'<img\b[^>]*>',
-      caseSensitive: false,
-    ).allMatches(source);
-    for (final match in imageTags) {
-      final tag = match.group(0)!;
-      String? attribute(String name) => RegExp(
-        '$name\\s*=\\s*["\']([^"\']*)["\']',
-        caseSensitive: false,
-      ).firstMatch(tag)?.group(1);
+    for (final image in galleryFragment.querySelectorAll('img')) {
+      String? attribute(String name) => image.attributes[name];
 
       final classes = attribute('class') ?? '';
       if (classes.contains('emoji') ||

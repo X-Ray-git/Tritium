@@ -86,7 +86,7 @@ flutter_html 原生 `onLinkTap`；不得再叠加 RenderParagraph hit-test 兜�
 2. **类型化解析**：覆盖 question/answer 组合、article/p、pin/pins、people/org
    （org 复用用户页）、appview、oia/articles、zvideo/video 与 `zhihu://`
    单复数 deep link。
-3. **导航策略**：原生支持问题、回答、文章、想法和用户；视频及尚未建设原生只读
+3. **导航策略**：原生支持问题、回答、文章、想法、用户与 `/video/{Lens ID}`；zvideo 及尚未建设原生只读
    页的话题、机构、专栏等知乎目的地转换为 HTTPS 后交给系统浏览器。无效链接给
    出统一反馈，不静默失败。所有原生内容跳转显式允许同一路由名携带不同内容 ID
    入栈；不能依赖 GetX 默认按路由名去重，否则回答→回答、问题→问题等会被静默
@@ -95,7 +95,7 @@ flutter_html 原生 `onLinkTap`；不得再叠加 RenderParagraph hit-test 兜�
 
 HTML 渲染不再用覆盖全部 `<a>` 的扩展压平链接：普通链接保留 flutter_html 的
 嵌套结构、样式与 `onLinkTap` 回调（同时保留文字选择），只有评论“查看图片/动图”
-链接使用专用缩略图扩展；`#anchor` 由 flutter_html 内置定位处理，找不到目标时
+链接以及正文视频卡片使用专用扩展（视频封面不进入图片画廊）；`#anchor` 由 flutter_html 内置定位处理，找不到目标时
 不再交给浏览器；没有 `href` 的文字不伪装成可点击。Android 使用 `singleTop`
 Activity：冷启动链接由 `getInitialLink` 消费，运行中链接由 `onNewIntent` 推送，
 禁止建立第二套页面路由表。

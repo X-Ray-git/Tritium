@@ -1,5 +1,38 @@
 # 决策日志
 
+## 2026-10-18：Lens 视频使用独立原生播放页
+
+背景：用户需要播放 `https://www.zhihu.com/video/{numbers}`。旧链接服务将 video
+和 zvideo 都交给浏览器，且 zhihu://video 会错误改写成 /zvideo。用户确认采用
+“正文封面入口 + 独立播放页”，允许引入官方 video_player；未授权扩展下载、倍速、
+持久进度、视频社区等功能。实现验收后，用户另行授权提交、推送及发布，
+以便安装 Release 进行真机验收；本次版本为 v0.4.6+12。
+
+参考证据（只借鉴接口与设计，未复制参考工程播放器代码）：
+
+- Hydrogen `3bab783`：`static/js/pages/answer.js` 的 VideoLoader 使用 Lens
+  `/api/v4/videos/{id}` 与 playlist；原实现 SD/LD/HD 顺序，本项目改为 HD/SD/LD。
+- 知乎++ `91e1ba28`：`shared/.../shared/data/ZhihuDataTypes.kt` 使用
+  `video/play_info`，带 content_id/content_type_str/video_id，按码率选择 MP4。
+  该接口需要实际正文上下文，不能伪造缺失的回答 ID；仅作为有上下文的备用。
+- Swift 参考 `6728c22`：`QABodyView.swift` 的原生播放器离开时暂停。
+- 知乎-- 未定位到可直接借鉴的完整播放页面，不以已有导航入口推断已具备播放能力。
+
+实现：ContentLinkService 保留 video/zvideo 身份，只有 /video 路由进入 VideoPage。
+CustomHtml 的视频锚点扩展接管封面和标题，普通文字链接仍走原生 onLinkTap。
+回答、文章和问题描述显式传递正文上下文，跨块和引用保留；独立外部入口仅走 Lens。
+HtmlChunker 只在提取画廊图片时过滤视频封面，正文分块绝不能删除视频卡片。
+播放器不嵌入正文，不改变既有一次布局与阅读终点算法；卡片固定 16:9，封面 contain。
+
+安全和生命周期：播放地址仅接受无 userInfo 的 HTTPS URL，每次打开/重试重新获取，
+不持久化临时 CDN URL。播放控制器不附带知乎 Cookie；后台暂停，退出释放；请求支持
+取消、播放器初始化 25 秒超时，过期初始化不更新已退出页面。全屏切横屏，退出恢复
+默认旋转策略与 edge-to-edge。进入播放页仍需按播放按钮，不做滚动触发自动播放。
+
+边界：上游是私有接口，本地结构测试不能证明所有真实视频都可访问；无播放源、
+网络/登录/解码失败显示重试，不静默跳浏览器。不把 zvideo post ID 当 Lens ID。
+Android 系统对沉浸模式和大屏旋转有自身限制，真机确认，不能以 Widget 测试代替。
+
 ## 2026-08-08：统计值必须可空解析，未知值显示 “—”
 
 背景：多个页面用 `字段 ?? 0` 把缺失或解析失败的统计值伪装成真实 0。回答页底栏

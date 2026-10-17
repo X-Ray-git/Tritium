@@ -29,6 +29,7 @@ class CustomHtml extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final List<String> imageUrls;
   final bool _isFragment;
+  final ({String id, String type})? videoContext;
 
   /// 链接点击处理器；默认交给 [ContentLinkService.open]。
   final void Function(
@@ -46,6 +47,7 @@ class CustomHtml extends StatelessWidget {
     this.padding,
     this.imageUrls = const [],
     this.onLinkTap,
+    this.videoContext,
   }) : _isFragment = false;
 
   const CustomHtml._fragment({
@@ -55,6 +57,7 @@ class CustomHtml extends StatelessWidget {
     required this.fontSize,
     required this.imageUrls,
     required this.onLinkTap,
+    required this.videoContext,
   }) : padding = null,
        _isFragment = true;
 
@@ -197,7 +200,7 @@ class CustomHtml extends StatelessWidget {
     final value = url?.trim() ?? '';
     // 页内 anchor 由 flutter_html 先尝试定位；未命中时不再交给浏览器或链接服务。
     if (value.isEmpty || value.startsWith('#')) return;
-    ContentLinkService.open(value);
+    ContentLinkService.open(value, videoContext: videoContext);
   }
 
   @override
@@ -222,6 +225,7 @@ class CustomHtml extends StatelessWidget {
                 fontSize: fontSize,
                 imageUrls: imageUrls,
                 onLinkTap: onLinkTap,
+                videoContext: videoContext,
               ),
           ],
         ),
@@ -247,6 +251,7 @@ class CustomHtml extends StatelessWidget {
           fontSize: fontSize,
           imageUrls: imageUrls,
           onLinkTap: onLinkTap,
+          videoContext: videoContext,
         ),
       );
     }
@@ -256,6 +261,7 @@ class CustomHtml extends StatelessWidget {
       renderConfigurationKey: (fontSize, theme.brightness, cs),
       onLinkTap: _handleLinkTap,
       extensions: [
+        _VideoLinkExtension(onTap: _handleLinkTap),
         const _GeneratedTextExtension(),
         // 处理 LaTeX 公式
         _MathExtension(fontSize: fontSize, colorScheme: cs),
@@ -395,6 +401,7 @@ class CustomHtml extends StatelessWidget {
           renderConfigurationKey: (fontSize, cs),
           onLinkTap: _handleLinkTap,
           extensions: [
+            _VideoLinkExtension(onTap: _handleLinkTap),
             const _GeneratedTextExtension(),
             _MathExtension(fontSize: fontSize - 1, colorScheme: cs),
             _ArticleImageExtension(
@@ -597,6 +604,101 @@ class _MathExtension extends TagExtension {
 }
 
 /// 正文图片：保留显式宽高或样式尺寸，稳定占位与 8px 圆角统一裁切。
+/// Own the entire video anchor, including its image, so it never opens a gallery.
+class _VideoLinkExtension extends TagExtension {
+  final void Function(String?, Map<String, String>, dom.Element?) onTap;
+  _VideoLinkExtension({required this.onTap})
+    : super(tagsToExtend: {'a'}, builder: (_) => const SizedBox.shrink());
+
+  String? _url(ExtensionContext context) {
+    final href = context.attributes['href'];
+    final target = href == null ? null : ContentLinkTarget.parse(href);
+    if (target?.kind == ContentLinkKind.video &&
+        !target!.uri.pathSegments.contains('zvideo')) {
+      return target.uri.toString();
+    }
+    final id = context.attributes['data-lens-id'];
+    if (context.classes.contains('video-box') &&
+        id != null &&
+        RegExp(r'^\d+$').hasMatch(id)) {
+      return 'https://www.zhihu.com/video/$id';
+    }
+    return null;
+  }
+
+  @override
+  bool matches(ExtensionContext context) =>
+      context.elementName == 'a' &&
+      (context.classes.contains('video-box') ||
+          context.element?.querySelector('img') != null) &&
+      _url(context) != null;
+
+  @override
+  InlineSpan build(ExtensionContext context) {
+    final image = context.element?.querySelector('img');
+    final poster =
+        context.attributes['data-poster'] ??
+        image?.attributes['data-actualsrc'] ??
+        image?.attributes['src'];
+    final safePoster = Uri.tryParse(poster ?? '');
+    final title =
+        context.attributes['data-name'] ??
+        context.element?.querySelector('.title')?.text ??
+        '播放视频';
+    return WidgetSpan(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Material(
+            color: Colors.black,
+            child: InkWell(
+              onTap: () =>
+                  onTap(_url(context), context.attributes, context.element),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (safePoster?.scheme == 'https' &&
+                        safePoster!.host.isNotEmpty)
+                      CachedNetworkImage(
+                        imageUrl: safePoster.toString(),
+                        fit: BoxFit.contain,
+                        errorWidget: (_, _, _) => const SizedBox.shrink(),
+                      ),
+                    const Center(
+                      child: Icon(
+                        Icons.play_circle_fill,
+                        color: Colors.white,
+                        size: 56,
+                      ),
+                    ),
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 10,
+                      child: Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          backgroundColor: Colors.black54,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ArticleImageExtension extends TagExtension {
   final List<String> imageUrls;
   final double fontSize;

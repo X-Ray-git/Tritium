@@ -51,6 +51,7 @@ dependencies:
   gal: ^2.3.0
   share_plus: ^10.1.4
   vector_math: ^2.2.0
+  video_player: ^2.14.1
 
 dev_dependencies:
   flutter_test:

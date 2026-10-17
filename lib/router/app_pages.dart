@@ -9,6 +9,7 @@ import '../pages/user/user_page.dart';
 import '../pages/settings/display_mode_page.dart';
 import '../pages/pin/pin_page.dart';
 import '../pages/history/history_page.dart';
+import '../pages/video/video_page.dart';
 
 /// 路由名称
 class Routes {
@@ -23,10 +24,12 @@ class Routes {
   static const String displayMode = '/displayMode';
   static const String pin = '/pin';
   static const String history = '/history';
+  static const String video = '/video';
 }
 
 /// 路由定义
 List<GetPage> get appPages => [
+  GetPage(name: Routes.video, page: () => const VideoPage()),
   GetPage(name: Routes.main, page: () => const MainPage()),
   GetPage(
     name: Routes.login,

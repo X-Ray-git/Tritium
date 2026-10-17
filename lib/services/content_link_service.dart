@@ -143,7 +143,10 @@ class ContentLinkTarget {
     return ContentLinkTarget(
       kind: ContentLinkKind.video,
       id: target.id,
-      uri: Uri.https('www.zhihu.com', '/zvideo/${target.id}'),
+      uri: Uri.https(
+        'www.zhihu.com',
+        '/${segments.contains('zvideo') ? 'zvideo' : 'video'}/${target.id}',
+      ),
     );
   }
 
@@ -246,7 +249,7 @@ class ContentLinkTarget {
 
 /// 应用内链接打开策略。
 ///
-/// 已有原生页的知乎内容（回答、问题、文章、想法、用户）应用内打开；视频、
+/// 已有原生页的知乎内容（回答、问题、文章、想法、用户、Lens 视频）应用内打开；zvideo、
 /// 话题、机构号、专栏等尚无原生页的知乎目的地与真正的外部网站由系统浏览器
 /// 打开；无效链接给出统一反馈，不静默失败。
 abstract final class ContentLinkService {
@@ -261,7 +264,10 @@ abstract final class ContentLinkService {
     _recentTargets.clear();
   }
 
-  static Future<void> open(String rawUrl) async {
+  static Future<void> open(
+    String rawUrl, {
+    ({String id, String type})? videoContext,
+  }) async {
     final target = ContentLinkTarget.parse(rawUrl);
     if (target == null) {
       TritiumFeedback.warning('无法打开', '链接格式无效');
@@ -272,7 +278,8 @@ abstract final class ContentLinkService {
     // Android. Coalesce only that short duplicate-callback window; keeping the
     // target locked for the lifetime of the opened page would block a later,
     // intentional visit to the same content.
-    final targetKey = '${target.kind.name}:${target.id ?? target.uri}';
+    final targetKey =
+        '${target.kind.name}:${target.kind == ContentLinkKind.video ? target.uri : target.id ?? target.uri}';
     if (_recentTargets.containsKey(targetKey)) return;
     _recentTargets[targetKey] = Timer(_duplicateCallbackWindow, () {
       _recentTargets.remove(targetKey);
@@ -319,17 +326,29 @@ abstract final class ContentLinkService {
         );
         return;
       case ContentLinkKind.video:
-      case ContentLinkKind.external:
-        try {
-          final opened = await launchUrl(
-            target.uri,
-            mode: LaunchMode.externalApplication,
+        // /zvideo identifies a video post, not a Lens media ID.
+        if (!target.uri.pathSegments.contains('zvideo')) {
+          await Get.toNamed(
+            Routes.video,
+            arguments: {'videoId': target.id, 'context': videoContext},
+            preventDuplicates: false,
           );
-          if (!opened) TritiumFeedback.warning('无法打开', '未找到可用的浏览器');
-        } catch (_) {
-          TritiumFeedback.warning('无法打开', '系统未能启动浏览器');
+          return;
         }
+        await _openExternal(target.uri);
         return;
+      case ContentLinkKind.external:
+        await _openExternal(target.uri);
+        return;
+    }
+  }
+
+  static Future<void> _openExternal(Uri uri) async {
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) TritiumFeedback.warning('无法打开', '未找到可用的浏览器');
+    } catch (_) {
+      TritiumFeedback.warning('无法打开', '系统未能启动浏览器');
     }
   }
 }

@@ -281,6 +281,9 @@ class _ArticlePageState extends State<ArticlePage> {
                         ChunkedHtmlSliver(
                           key: ValueKey(content.hashCode),
                           content: content,
+                          videoContext: _articleId == null
+                              ? null
+                              : (id: _articleId!, type: 'article'),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 11,
                             vertical: 8,

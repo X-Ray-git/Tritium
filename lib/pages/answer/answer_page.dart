@@ -940,6 +940,7 @@ class _AnswerSinglePageState extends State<_AnswerSinglePage>
                 ChunkedHtmlSliver(
                   key: ValueKey(content.hashCode),
                   content: content.isNotEmpty ? content : '<p>$excerpt</p>',
+                  videoContext: (id: widget.answerId, type: 'answer'),
                   fontSize: 16,
                   imageUrls: _imageUrls,
                   padding: const EdgeInsets.symmetric(

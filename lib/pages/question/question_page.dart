@@ -89,6 +89,9 @@ class _QuestionPageState extends State<QuestionPage> {
     return SelectionArea(
       child: CustomHtml(
         content: content,
+        videoContext: _questionId == null
+            ? null
+            : (id: _questionId!, type: 'question'),
         fontSize: 15,
         imageUrls: HtmlChunker.extractImageUrls(content),
       ),

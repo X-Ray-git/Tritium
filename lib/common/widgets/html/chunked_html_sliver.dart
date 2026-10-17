@@ -14,6 +14,7 @@ class ChunkedHtmlSliver extends StatefulWidget {
   final EdgeInsetsGeometry padding;
   final VoidCallback? onReady;
   final List<String> imageUrls;
+  final ({String id, String type})? videoContext;
 
   const ChunkedHtmlSliver({
     super.key,
@@ -22,6 +23,7 @@ class ChunkedHtmlSliver extends StatefulWidget {
     this.padding = EdgeInsets.zero,
     this.onReady,
     this.imageUrls = const [],
+    this.videoContext,
   });
 
   @override
@@ -110,6 +112,7 @@ class _ChunkedHtmlSliverState extends State<ChunkedHtmlSliver> {
             (index) => RepaintBoundary(
               child: CustomHtml(
                 content: _chunks[index],
+                videoContext: widget.videoContext,
                 fontSize: widget.fontSize,
                 imageUrls: widget.imageUrls,
               ),
